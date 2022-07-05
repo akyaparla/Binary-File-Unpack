@@ -3,8 +3,9 @@ class BinaryFileUnpack:
     '''
     Class to neatly unpack binary files (Binary File Unpack). Provides the header information as well as the data for the sensors.
 
+
     Methods:
-        __init__: Method to initialize a BFU object.
+        __init__: Method to initialize a BinaryFileUnpack object.
         spectra (np.ndarray): Returns the frequencies (in Hertz) and the power (in deciBels) present in the spectrum of the data. Utilizes the scipy module to return the spectrum.
         plot_static: Outputs a static plot of the sensor data against a time series. Utilizes the matplotlib module.
         plot_interactive: Outputs a plot of the sensor data against a time series. Implements a HoverTool and a CrossHairTool for the user to analyze the data.
@@ -13,7 +14,7 @@ class BinaryFileUnpack:
     '''
     def __init__(self, fileName:str):
         '''
-        Method to initialize a BFU object.
+        Method to initialize a BinaryFileUnpack object.
 
         Parameters:
             fileName: The file path for the binary file to be analyzed
@@ -39,9 +40,9 @@ class BinaryFileUnpack:
         self.offset = 0
 
         ## Parsing Metadata
-        fileVersion = BFU.getDtype(self, 'int32', 4)
-        self.fs = BFU.getDtype(self, 'float32', 4)
-        devCount = BFU.getDtype(self, 'uint32', 4)
+        fileVersion = BinaryFileUnpack.getDtype(self, 'int32', 4)
+        self.fs = BinaryFileUnpack.getDtype(self, 'float32', 4)
+        devCount = BinaryFileUnpack.getDtype(self, 'uint32', 4)
 
         DevID = np.empty(devCount, np.int32)
         SNL = np.empty(devCount, np.uint32)
@@ -52,18 +53,18 @@ class BinaryFileUnpack:
         Name_lst = []
         ChanNum_lst = []
 
-        for i in range(DevCount):
-            DevID[i] = BFU.getDtype(self, 'int32', 4)
+        for i in range(devCount):
+            DevID[i] = BinaryFileUnpack.getDtype(self, 'int32', 4)
             
-            SNL[i] = BFU.getDtype(self, 'uint32', 4)
-            SN_lst.append(BFU.getDtype(self, 'byte', 1, SNL[i]))
+            SNL[i] = BinaryFileUnpack.getDtype(self, 'uint32', 4)
+            SN_lst.append(BinaryFileUnpack.getDtype(self, 'byte', 1, SNL[i]))
             
             
-            NameL[i] = BFU.getDtype(self, 'uint32', 4)
-            Name_lst.append(BFU.getDtype(self, 'byte', 1, NameL[i]))
+            NameL[i] = BinaryFileUnpack.getDtype(self, 'uint32', 4)
+            Name_lst.append(BinaryFileUnpack.getDtype(self, 'byte', 1, NameL[i]))
 
-            NumEnChan[i] = BFU.getDtype(self, 'uint32', 4)
-            ChanNum_lst.append(BFU.getDtype(self, 'int32', 4, NumEnChan[i]))
+            NumEnChan[i] = BinaryFileUnpack.getDtype(self, 'uint32', 4)
+            ChanNum_lst.append(BinaryFileUnpack.getDtype(self, 'int32', 4, NumEnChan[i]))
 
         # Converting Lists into Arrays
         SN = np.array(SN_lst)
@@ -83,15 +84,15 @@ class BinaryFileUnpack:
         status = False  # EOF marker
         c = 0
         Trel = 0
-        self.data = np.empty((10000, NumEnChan[0], DevCount))
+        self.data = np.empty((10000, NumEnChan[0], devCount))
 
         while not status:
             for i in range(devCount):
-                Tsec = BFU.getDtype(self, 'uint64', 8)
-                TNsec = BFU.getDtype(self, 'uint32', 4)
-                NS = BFU.getDtype(self, 'uint32', 4)
+                Tsec = BinaryFileUnpack.getDtype(self, 'uint64', 8)
+                TNsec = BinaryFileUnpack.getDtype(self, 'uint32', 4)
+                NS = BinaryFileUnpack.getDtype(self, 'uint32', 4)
                 Nt = NS // NumEnChan[i]
-                d = BFU.getDtype(self, 'float32', 4, NumEnChan[i]*Nt).reshape((NumEnChan[i], Nt), order='F')
+                d = BinaryFileUnpack.getDtype(self, 'float32', 4, NumEnChan[i]*Nt).reshape((NumEnChan[i], Nt), order='F')
                 if c >= self.data.shape[0]:
                     tmp = np.empty((c+Nt, NumEnChan[0], devCount))
                     tmp[:c, :, :] = self.data
@@ -99,13 +100,13 @@ class BinaryFileUnpack:
                 self.data[c:c+Nt, :, i] = d.T
             
             c += Nt
-            status = BFU.endOfFile(self)
+            status = BinaryFileUnpack.endOfFile(self)
 
         ## Getting Temperature and Pressure Data
         self.num_sens:int = 2*devCount
         self.T = np.empty((self.num_sens, self.data.shape[0]))
         self.P = np.empty((self.num_sens, self.data.shape[0]))
-        for i in range(DevCount):
+        for i in range(devCount):
             self.T[2*i]   = (self.data[:, 1, i] - 1.478) / 0.01746 + 25
             self.T[2*i+1] = (self.data[:, 3, i] - 1.478) / 0.01746 + 25
             self.P[2*i]   = self.data[:, 0, i]
