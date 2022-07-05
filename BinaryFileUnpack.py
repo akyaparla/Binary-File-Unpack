@@ -86,7 +86,7 @@ class BinaryFileUnpack:
         self.data = np.empty((10000, NumEnChan[0], DevCount))
 
         while not status:
-            for i in range(DevCount):
+            for i in range(devCount):
                 Tsec = BFU.getDtype(self, 'uint64', 8)
                 TNsec = BFU.getDtype(self, 'uint32', 4)
                 NS = BFU.getDtype(self, 'uint32', 4)
@@ -202,7 +202,10 @@ class BinaryFileUnpack:
                 output_format is not either 'file' or 'notebook'.
                 The plot dimension does not match the number of plots (same as the number of sensors).
         '''
-        
+        from bokeh.plotting import figure, output_file, output_notebook, show, save, ColumnDataSource
+        from bokeh.models.tools import HoverTool, CrosshairTool, BoxZoomTool, WheelZoomTool, SaveTool, ResetTool
+        from bokeh.layouts import gridplot, column
+        from bokeh.models.widgets import RangeSlider
         if plots_shape[0]*plots_shape[1] != y.shape[0]:
             raise ValueError(f"Plot dimension does not match number of plots. Plot Dimension: {plots_shape}, Number of plots: {self.num_sens}")
 
