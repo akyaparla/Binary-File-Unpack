@@ -1,7 +1,7 @@
 import numpy as np
 class BinaryFileUnpack:
     '''
-    Class to neatly unpack binary files (Binary File Unpack). Provides the header information as well as the data for the sensors.
+    Class to neatly unpack binary files. Provides the header information as well as the data for the sensors.
 
     Methods:
         __init__: Method to initialize a BinaryFileUnpack object.
@@ -202,10 +202,11 @@ class BinaryFileUnpack:
                 output_format is not either 'file' or 'notebook'.
                 The plot dimension does not match the number of plots (same as the number of sensors).
         '''
-        from bokeh.plotting import figure, output_file, output_notebook, show, save, ColumnDataSource
+        from bokeh.plotting import figure, output_file, output_notebook, reset_output, show, ColumnDataSource
         from bokeh.models.tools import HoverTool, CrosshairTool, BoxZoomTool, WheelZoomTool, SaveTool, ResetTool
         from bokeh.layouts import gridplot, column
         from bokeh.models.widgets import RangeSlider
+        
         if plots_shape[0]*plots_shape[1] != y.shape[0]:
             raise ValueError(f"Plot dimension does not match number of plots. Plot Dimension: {plots_shape}, Number of plots: {self.num_sens}")
 
@@ -227,7 +228,6 @@ class BinaryFileUnpack:
                 title = f"Sensor {i+1}",
                 sizing_mode = "stretch_width",
                 plot_height = 675//plots_shape[0],
-                # y_axis_title = y_label,
                 x_range=x_range,
                 x_axis_type=x_axis_type,
             )
@@ -264,13 +264,24 @@ class BinaryFileUnpack:
                 BoxZoomTool(), WheelZoomTool(), SaveTool(), ResetTool()
             ]
 
+        # Adding axis labels
+        grid_layout = np.reshape(plots, plots_shape)
+        # x-axis
+        for i in range(grid_layout.shape[1]):
+            grid_layout[-1][i].xaxis.axis_label = x_label
+        # y-axis
+        for i in range(grid_layout.shape[0]):
+            grid_layout[i][0].yaxis.axis_label = y_label
+
         # Formatting the Graphs
-        grid_layout = list(np.reshape(plots, plots_shape))
-        grid_plots = gridplot((grid_layout), sizing_mode = "stretch_width")
+        grid_plots = gridplot(list(grid_layout), sizing_mode = "stretch_width")
         grid = column(grid_plots, time_range, sizing_mode="stretch_width")
 
+        reset_output()
         if output_format == 'file':
-            output_file(f"{self.fileName.split('.')[0]}-{y_label.strip()}-{x_label.strip()}.html")
+            y_strip = y_label.strip(' \\><:\"|?*$')
+            x_strip = x_label.strip(' \\><:\"|?*$')
+            output_file(f"{self.fileName.split('.')[0]}-{y_strip}-{x_strip}.html")
         elif output_format == 'notebook':
             output_notebook()
         else:
