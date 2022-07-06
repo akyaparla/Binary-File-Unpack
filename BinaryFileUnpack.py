@@ -39,9 +39,9 @@ class BinaryFileUnpack:
         self.offset = 0
 
         ## Parsing Metadata
-        fileVersion = BinaryFileUnpack.getDtype(self, 'int32', 4)
-        self.fs = BinaryFileUnpack.getDtype(self, 'float32', 4)
-        devCount = BinaryFileUnpack.getDtype(self, 'uint32', 4)
+        fileVersion = self.getDtype('int32', 4)
+        self.fs = self.getDtype('float32', 4)
+        devCount = self.getDtype('uint32', 4)
 
         DevID = np.empty(devCount, np.int32)
         SNL = np.empty(devCount, np.uint32)
@@ -53,17 +53,17 @@ class BinaryFileUnpack:
         ChanNum_lst = []
 
         for i in range(devCount):
-            DevID[i] = BinaryFileUnpack.getDtype(self, 'int32', 4)
+            DevID[i] = self.getDtype('int32', 4)
             
-            SNL[i] = BinaryFileUnpack.getDtype(self, 'uint32', 4)
-            SN_lst.append(BinaryFileUnpack.getDtype(self, 'byte', 1, SNL[i]))
+            SNL[i] = self.getDtype('uint32', 4)
+            SN_lst.append(self.getDtype('byte', 1, SNL[i]))
             
             
-            NameL[i] = BinaryFileUnpack.getDtype(self, 'uint32', 4)
-            Name_lst.append(BinaryFileUnpack.getDtype(self, 'byte', 1, NameL[i]))
+            NameL[i] = self.getDtype('uint32', 4)
+            Name_lst.append(self.getDtype('byte', 1, NameL[i]))
 
-            NumEnChan[i] = BinaryFileUnpack.getDtype(self, 'uint32', 4)
-            ChanNum_lst.append(BinaryFileUnpack.getDtype(self, 'int32', 4, NumEnChan[i]))
+            NumEnChan[i] = self.getDtype('uint32', 4)
+            ChanNum_lst.append(self.getDtype('int32', 4, NumEnChan[i]))
 
         # Converting Lists into Arrays
         SN = np.array(SN_lst)
@@ -87,11 +87,11 @@ class BinaryFileUnpack:
 
         while not status:
             for i in range(devCount):
-                Tsec = BinaryFileUnpack.getDtype(self, 'uint64', 8)
-                TNsec = BinaryFileUnpack.getDtype(self, 'uint32', 4)
-                NS = BinaryFileUnpack.getDtype(self, 'uint32', 4)
+                Tsec = self.getDtype('uint64', 8)
+                TNsec = self.getDtype('uint32', 4)
+                NS = self.getDtype('uint32', 4)
                 Nt = NS // NumEnChan[i]
-                d = BinaryFileUnpack.getDtype(self, 'float32', 4, NumEnChan[i]*Nt).reshape((NumEnChan[i], Nt), order='F')
+                d = self.getDtype('float32', 4, NumEnChan[i]*Nt).reshape((NumEnChan[i], Nt), order='F')
                 if c >= self.data.shape[0]:
                     tmp = np.empty((c+Nt, NumEnChan[0], devCount))
                     tmp[:c, :, :] = self.data
