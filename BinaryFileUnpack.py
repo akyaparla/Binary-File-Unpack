@@ -3,7 +3,6 @@ class BinaryFileUnpack:
     '''
     Class to neatly unpack binary files (Binary File Unpack). Provides the header information as well as the data for the sensors.
 
-
     Methods:
         __init__: Method to initialize a BinaryFileUnpack object.
         spectra (np.ndarray): Returns the frequencies (in Hertz) and the power (in deciBels) present in the spectrum of the data. Utilizes the scipy module to return the spectrum.
