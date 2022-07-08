@@ -40,7 +40,7 @@ class BinaryFileUnpack:
 
         ## Parsing Metadata
         fileVersion = self.getDtype('int32', 4)
-        self.fs = self.getDtype('float32', 4)
+        self.fs:np.float32 = self.getDtype('float32', 4)
         devCount = self.getDtype('uint32', 4)
 
         DevID = np.empty(devCount, np.int32)
@@ -57,7 +57,6 @@ class BinaryFileUnpack:
             
             SNL[i] = self.getDtype('uint32', 4)
             SN_lst.append(self.getDtype('byte', 1, SNL[i]))
-            
             
             NameL[i] = self.getDtype('uint32', 4)
             Name_lst.append(self.getDtype('byte', 1, NameL[i]))
@@ -133,7 +132,7 @@ class BinaryFileUnpack:
         if self.num_sens == 1:
             data_spec = np.reshape(data_spec, (1, len(data_spec)))
             
-        Pxx = np.empty((2, self.num_sens, int(np.ceil(N/2))))
+        Pxx = np.empty((2, self.num_sens, N//2 + 1))
         for i in range(self.num_sens):
             f, Pper_spec = signal.periodogram(data_spec[i], self.fs, 'cosine', scaling='density')
             power = 10 * np.log10(Pper_spec)
