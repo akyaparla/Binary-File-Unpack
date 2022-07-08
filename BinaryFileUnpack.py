@@ -159,6 +159,7 @@ class BinaryFileUnpack:
             ValueError:
                 The plot dimension does not match the number of plots (same as the number of sensors).
         '''
+        # TODO Add parameters for min and max x
         import matplotlib.pyplot as plt
 
         if plots_shape[0]*plots_shape[1] != y.shape[0]:
@@ -201,6 +202,7 @@ class BinaryFileUnpack:
                 output_format is not either 'file' or 'notebook'.
                 The plot dimension does not match the number of plots (same as the number of sensors).
         '''
+        # TODO Make an automatic adjusting y-axis when the data range is changed
         from bokeh.plotting import figure, output_file, output_notebook, reset_output, show, ColumnDataSource
         from bokeh.models.tools import HoverTool, CrosshairTool, BoxZoomTool, WheelZoomTool, SaveTool, ResetTool
         from bokeh.layouts import gridplot, column
