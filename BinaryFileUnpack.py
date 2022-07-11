@@ -140,7 +140,7 @@ class BinaryFileUnpack:
         return Pxx
 
     def plot_static(self, x:np.ndarray, y:np.ndarray, x_label:str, y_label:str, 
-                    plots_shape:tuple, color:str='blue', x_axis_type:str='linear'):
+                    plots_shape:tuple, color:str='blue', x_axis_type:str='linear', x_range:tuple=None):
         '''
         Outputs a static plot of the sensor data against a time series. Utilizes the matplotlib module.
 
@@ -179,6 +179,9 @@ class BinaryFileUnpack:
                 ax[i][j].plot(x[ax.shape[1]*i+j] if x.shape[0] == y.shape[0] else x, y[ax.shape[1]*i+j], color=color)
                 ax[i][j].set_xscale(x_axis_type)
                 ax[i][j].set_title(f"Sensor {ax.shape[1]*i+j+1}")
+                if x_range is not None:
+                    if len(x_range) != 2: raise IndexError(f"x_range should contain only 2 values, has {len(x_range)}.")
+                    ax[i][j].set_xlim(x_range)
 
     def plot_interactive(self, x:np.ndarray, y:np.ndarray, x_label:str, y_label:str, 
                          plots_shape:tuple, color=None, x_axis_type:str='linear', output_format:str='file'):
@@ -204,8 +207,9 @@ class BinaryFileUnpack:
         '''
         # TODO Make an automatic adjusting y-axis when the data range is changed
         from bokeh.plotting import figure, output_file, output_notebook, reset_output, show, ColumnDataSource
-        from bokeh.models.tools import HoverTool, CrosshairTool, BoxZoomTool, WheelZoomTool, SaveTool, ResetTool
         from bokeh.layouts import gridplot, column
+        from bokeh.models import CustomJS
+        from bokeh.models.tools import HoverTool, CrosshairTool, BoxZoomTool, WheelZoomTool, SaveTool, ResetTool
         from bokeh.models.widgets import RangeSlider
         
         if plots_shape[0]*plots_shape[1] != y.shape[0]:
@@ -240,10 +244,35 @@ class BinaryFileUnpack:
 
         # Double-ended range slider so user can select data in a given time frame
         x_to_use = x if len(x.shape)==1 else x[0]
+
         time_range = RangeSlider(start=x_to_use[1], end=x_to_use[-1], value=(x_to_use[1], x_to_use[-1]), step=0.01, sizing_mode="stretch_width")
         for plot in plots:
             time_range.js_link('value', plot.x_range, 'start', attr_selector=0)
             time_range.js_link('value', plot.x_range, 'end', attr_selector=1)
+
+        # Adjust the y-axis for each plot on change of time_range
+        # time_range.js_on_change('value', CustomJS(args=dict(plots=plots, sources=sources), code=
+        # '''
+        # var x_arr = sources[0].data['x']
+        # var x_range = cb_obj.value;
+
+        # var start_ind = x_arr.indexOf(x_range[0])
+        # var end_ind = x_arr.indexOf(x_range[1])
+
+        # if (start_ind == -1) {
+        #     start_ind = 0;
+        # }
+
+        # if (end_ind == -1) {
+        #     end_ind = x_arr.length - 1;
+        # }
+
+        # for (let i = 0; i < plots.length, i++) {
+        #     sensNum = 'Sensor '+i
+        #     y_arr = sources[i].data[sensNum]
+        # }
+        # '''
+        # ))
 
         if color is None:
             from bokeh.palettes import Turbo6
