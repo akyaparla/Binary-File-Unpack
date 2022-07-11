@@ -159,7 +159,6 @@ class BinaryFileUnpack:
             ValueError:
                 The plot dimension does not match the number of plots (same as the number of sensors).
         '''
-        # TODO Add parameters for min and max x
         import matplotlib.pyplot as plt
 
         if plots_shape[0]*plots_shape[1] != y.shape[0]:
@@ -205,7 +204,6 @@ class BinaryFileUnpack:
                 output_format is not either 'file' or 'notebook'.
                 The plot dimension does not match the number of plots (same as the number of sensors).
         '''
-        # TODO Make an automatic adjusting y-axis when the data range is changed
         from bokeh.plotting import figure, output_file, output_notebook, reset_output, show, ColumnDataSource
         from bokeh.layouts import gridplot, column
         from bokeh.models import CustomJS
@@ -244,35 +242,51 @@ class BinaryFileUnpack:
 
         # Double-ended range slider so user can select data in a given time frame
         x_to_use = x if len(x.shape)==1 else x[0]
-
         time_range = RangeSlider(start=x_to_use[1], end=x_to_use[-1], value=(x_to_use[1], x_to_use[-1]), step=0.01, sizing_mode="stretch_width")
         for plot in plots:
             time_range.js_link('value', plot.x_range, 'start', attr_selector=0)
             time_range.js_link('value', plot.x_range, 'end', attr_selector=1)
 
         # Adjust the y-axis for each plot on change of time_range
-        # time_range.js_on_change('value', CustomJS(args=dict(plots=plots, sources=sources), code=
-        # '''
-        # var x_arr = sources[0].data['x']
-        # var x_range = cb_obj.value;
+        time_range.js_on_change('value', CustomJS(
+            args=dict(plots=plots, sources=sources), 
+            code="""
+            // Getting x-data (shared between all sources)
+            var x_arr = sources[0].data['x'];
+            var x_range = cb_obj.value;
 
-        # var start_ind = x_arr.indexOf(x_range[0])
-        # var end_ind = x_arr.indexOf(x_range[1])
+            // Getting indices of range slider
+            var start_ind = x_arr.indexOf(x_range[0]);
+            var end_ind = x_arr.indexOf(x_range[1]);
 
-        # if (start_ind == -1) {
-        #     start_ind = 0;
-        # }
+            if (start_ind == -1) {
+                start_ind = 0;
+            }
 
-        # if (end_ind == -1) {
-        #     end_ind = x_arr.length - 1;
-        # }
+            if (end_ind == -1) {
+                end_ind = x_arr.length - 1;
+            }
 
-        # for (let i = 0; i < plots.length, i++) {
-        #     sensNum = 'Sensor '+i
-        #     y_arr = sources[i].data[sensNum]
-        # }
-        # '''
-        # ))
+            // Iterate through all the sensors
+            for (let i = 0; i < plots.length; i++) {
+                // Sensor number
+                var sensNum = 'Sensor '+(i+1);
+                
+                // Getting y-data
+                var y_arr = sources[i].data[sensNum];
+                var y_range_arr = y_arr.slice(start_ind, end_ind);
+                
+                // Getting max, min, and range of data
+                var max = Math.max(...y_range_arr.filter((el) => !isNaN(el)));
+                var min = Math.min(...y_range_arr.filter((el) => !isNaN(el)));
+                var range = max - min;
+                
+                // Dynamically changing the axis range
+                plots[i].y_range.start = min - range/25;
+                plots[i].y_range.end = max + range/25;
+            }
+            """
+            ))
 
         if color is None:
             from bokeh.palettes import Turbo6
