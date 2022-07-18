@@ -34,7 +34,7 @@ class BinaryFileUnpack:
             time (ndarray): The time series for the data given in self.P and self.T.
             offset: A variable to track the number of bytes transversed in the binary file. Primarily meant for internal use.
         '''
-        self.fileName = fileName
+        self.fileName = fileName.replace('\\', '/')
         
         self.offset = 0
 
@@ -56,10 +56,10 @@ class BinaryFileUnpack:
             DevID[i] = self.getDtype('int32', 4)
             
             SNL[i] = self.getDtype('uint32', 4)
-            SN_lst.append(self.getDtype('byte', 1, SNL[i]))
+            SN_lst.append(self.getDtype('int8', 1, SNL[i]))
             
             NameL[i] = self.getDtype('uint32', 4)
-            Name_lst.append(self.getDtype('byte', 1, NameL[i]))
+            Name_lst.append(self.getDtype('int8', 1, NameL[i]))
 
             NumEnChan[i] = self.getDtype('uint32', 4)
             ChanNum_lst.append(self.getDtype('int32', 4, NumEnChan[i]))
@@ -77,6 +77,14 @@ class BinaryFileUnpack:
             "Name Length": NameL, "Name": Name,
             "Number of Enabled Channels": NumEnChan, "Channel Number": chanNum            
         }
+
+        # Names might not be in the order of the sensors, so get order of sensors
+        self.num_sens:int = 2*devCount
+        order_name = np.argsort(Name[:, -1])
+        order = np.empty(self.num_sens, 'int')
+        for i in range(len(order_name)):
+            order[2*i] = 2*order_name[i]
+            order[2*i+1] = 2*order_name[i]+1
 
         ## Parsing data
         status = False  # EOF marker
@@ -101,15 +109,16 @@ class BinaryFileUnpack:
             status = BinaryFileUnpack.endOfFile(self)
 
         ## Getting Temperature and Pressure Data
-        self.num_sens:int = 2*devCount
-        self.T = np.empty((self.num_sens, self.data.shape[0]))
-        self.P = np.empty((self.num_sens, self.data.shape[0]))
+        P = np.empty((self.num_sens, self.data.shape[0]))
+        T = np.empty((self.num_sens, self.data.shape[0]))
         for i in range(devCount):
-            self.T[2*i]   = (self.data[:, 1, i] - 1.478) / 0.01746 + 25
-            self.T[2*i+1] = (self.data[:, 3, i] - 1.478) / 0.01746 + 25
-            self.P[2*i]   = self.data[:, 0, i]
-            self.P[2*i+1] = self.data[:, 2, i]
+            T[2*i]   = (self.data[:, 1, i] - 1.478) / 0.01746 + 25
+            T[2*i+1] = (self.data[:, 3, i] - 1.478) / 0.01746 + 25
+            P[2*i]   = self.data[:, 0, i]
+            P[2*i+1] = self.data[:, 2, i]
 
+        self.P = P[order]
+        self.T = T[order]
         # Creating time series
         self.time = np.arange(0, (len(self.T[0, :]))/self.fs, 1/self.fs)
     
