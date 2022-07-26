@@ -68,15 +68,6 @@ class BinaryFileUnpack:
         SN = np.array(SN_lst)
         Name = np.array(Name_lst)
         chanNum = np.array(ChanNum_lst)
-        
-        # Store all header information in dictionary
-        self.header_info = {
-            "File Version": fileVersion, "Sampling Rate": self.fs,
-            "Device Count": devCount, "Device ID": DevID,
-            "Serial Number Length": SNL, "Serial Number": SN,
-            "Name Length": NameL, "Name": Name,
-            "Number of Enabled Channels": NumEnChan, "Channel Number": chanNum            
-        }
 
         # Names might not be in the order of the sensors, so get order of sensors
         self.num_sens:int = 2*devCount
@@ -85,6 +76,18 @@ class BinaryFileUnpack:
         for i in range(len(order_name)):
             order[2*i] = 2*order_name[i]
             order[2*i+1] = 2*order_name[i]+1
+        
+        SN = SN[order_name, :]
+        Name = Name[order_name, :]
+
+        # Store all header information in dictionary
+        self.header_info = {
+            "File Version": fileVersion, "Sampling Rate": self.fs,
+            "Device Count": devCount, "Device ID": DevID,
+            "Serial Number Length": SNL, "Serial Number": SN,
+            "Name Length": NameL, "Name": Name,
+            "Number of Enabled Channels": NumEnChan, "Channel Number": chanNum            
+        }
 
         ## Parsing data
         status = False  # EOF marker
@@ -120,7 +123,7 @@ class BinaryFileUnpack:
         self.P = P[order]
         self.T = T[order]
         # Creating time series
-        self.time = np.arange(0, (len(self.T[0, :]))/self.fs, 1/self.fs)
+        self.time = np.linspace(0, (self.P.shape[1])/self.fs, self.P.shape[1]) 
     
     def spectra(self, data_spec:np.ndarray) -> np.ndarray:
         '''
