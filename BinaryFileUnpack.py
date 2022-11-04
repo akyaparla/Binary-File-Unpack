@@ -112,18 +112,49 @@ class BinaryFileUnpack:
             status = BinaryFileUnpack.endOfFile(self)
 
         ## Getting Temperature and Pressure Data
+        def temp_convert(temp) -> float:
+            'Converts measured temp data from volts to deg Celsius'
+            return (temp - 1.478) / 0.01746 + 25
+
+
         P = np.empty((self.num_sens, self.data.shape[0]))
         T = np.empty((self.num_sens, self.data.shape[0]))
         for i in range(devCount):
-            T[2*i]   = (self.data[:, 1, i] - 1.478) / 0.01746 + 25
-            T[2*i+1] = (self.data[:, 3, i] - 1.478) / 0.01746 + 25
+            T[2*i]   = temp_convert(self.data[:, 1, i])
+            T[2*i+1] = temp_convert(self.data[:, 3, i])
             P[2*i]   = self.data[:, 0, i]
             P[2*i+1] = self.data[:, 2, i]
 
         self.P = P[order]
         self.T = T[order]
         # Creating time series
-        self.time = np.linspace(0, (self.P.shape[1])/self.fs, self.P.shape[1]) 
+        self.time = np.linspace(0, (self.P.shape[1])/self.fs, self.P.shape[1])
+
+        ## Apply pressure and temperature corrections by serial number
+        # Numpy array with all the sensor corrections, first column is serial number, 
+        # second column is P correction, third column is P correction std. dev.
+        # fourth column is T correction (volts), fifth column is T correction std. dev.
+        sens_corr = np.array([
+            [5122769, -0.0047, 0.0029,  0.0147, 0.0091],
+            [5122770,  0.0007, 0.0024, -0.0044, 0.0185],
+            [5122777,  0.0034, 0.0104, -0.0013, 0.0090],
+            [5122778,  0.0182, 0.0046, -0.0015, 0.0102],
+            [5940428, -0.0046, 0.0031,  0.0019,	0.0089],
+            [5940430, -0.0131, 0.0031, -0.0094, 0.0133],
+        ])
+
+        # Numpy array with sensor SN with index corresponding to position
+        sens_used = np.array([5122778, 5122770, 5940428, 5122769, 5122777, 5940430])
+
+        # Apply temperature and pressure corrections
+        for i in range(len(sens_used)):
+            # See if correction can be applied to the sensor
+            ind_arr = np.where(sens_corr[:, 0] == sens_used[i])[0]
+            if len(ind_arr) > 0:
+                j = ind_arr[0]
+                self.P[i] += sens_corr[j, 1]
+                self.T[i] += temp_convert(sens_corr[j, 3] + 1.478) - 25
+
     
     def spectra(self, data_spec:np.ndarray) -> np.ndarray:
         '''
