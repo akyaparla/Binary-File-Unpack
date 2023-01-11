@@ -171,24 +171,30 @@ class BinaryFileUnpack:
         '''
         # Getting Frequencies for Spectral Analysis
         import scipy.signal as signal
-        N = self.data.shape[0]
-        if self.num_sens == 1:
+        # Length of first axis indicates number of sensors
+        # Length of second axis is number of data points
+        
+        # Reshape array to 2D if one sensor is available
+        if len(data_spec.shape) == 1:
             data_spec = np.reshape(data_spec, (1, len(data_spec)))
+        
+        spec_sens = data_spec.shape[0]
+        N = data_spec.shape[1]
             
-        Pxx = np.empty((2, self.num_sens, N//2 + 1))
-        for i in range(self.num_sens):
+        Pxx = np.empty((2, spec_sens, N//2 + 1))
+        for i in range(spec_sens):
             f, Pper_spec = signal.periodogram(data_spec[i], self.fs, 'cosine', scaling='density')
             power = 10 * np.log10(Pper_spec)
-            Pxx[:,i, :] = np.stack([f, power])
+            Pxx[:, i, :] = np.stack([f, power])
         return Pxx
 
-    def plot_static(self, x:np.ndarray, y:np.ndarray, x_label:str, y_label:str, 
-                    plots_shape:tuple, color:str='blue', x_axis_type:str='linear', x_range:tuple=None):
+    def plot_static(self, x:np.ndarray, y:np.ndarray, x_label:str, y_label:str, plots_shape:tuple, 
+                    color:str='blue', x_axis_type:str='linear', x_range:tuple=None, sharex=True, plot_type='line'):
         '''
         Outputs a static plot of the sensor data against a time series. Utilizes the matplotlib module.
 
         Parameters:
-            x (ndarray): A (1-D) array of the time series or (2-D) array of the frequency data. If 2-D, axis convention follows that of the param y.
+            x (ndarray): A (1-D) array of the time series or (2-D) array of the frequency or measurement data. If 2-D, axis convention follows that of the param y.
             y (ndarray): A 2-dimensional array with the sensor data or power spectrum. 
                 First axis: The sensor index.
                 Second axis: Contains the data for that sensor.
@@ -196,7 +202,10 @@ class BinaryFileUnpack:
             y_label (str): The type of sensor data along with its units.
             plots_shape (tuple): The shape of the plots in the output in terms of number of rows and columns. Input should be (rows, cols).
             color (Any): Identifies the line_color feature of each line glyph for the plots. Allowed inputs are those allowed by line_color (default is element in bokeh.palettes.Turbo6).
-            x_axis_type ('linear', 'log'): The scale of the x-axis, either can be a linear axis (='linear;) or logarithmic axis (='log'). Default is 'linear'. 'log' option has bugs with the x-axis labels due to log(0) errors.                 
+            x_axis_type ('linear', 'log'): The scale of the x-axis, either can be a linear axis (='linear;) or logarithmic axis (='log'). Default is 'linear'.
+            x_range (tuple): The lower and upper bounds of the x-axis.
+            sharex (bool): If true, the plots will share the same x-scale. Otherwise, they will have independent scales.
+            plot_type ('line', 'scatter'): Defines the type of plot displayed. Default is 'line'.
         
         Raises:
             ValueError:
@@ -205,9 +214,9 @@ class BinaryFileUnpack:
         import matplotlib.pyplot as plt
 
         if plots_shape[0]*plots_shape[1] != y.shape[0]:
-            raise ValueError(f"Plot dimension does not match number of plots. Plot Dimension: {plots_shape}, Number of plots: {self.num_sens}")
+            raise ValueError(f"Plot dimension does not match number of plots. Plot Dimension: {plots_shape}, Number of plots: {y.shape[0]}")
 
-        fig, ax = plt.subplots(plots_shape[0], plots_shape[1], sharex=True, figsize=(10, 5/3*self.num_sens), tight_layout=True)
+        fig, ax = plt.subplots(plots_shape[0], plots_shape[1], sharex=sharex, figsize=(10, 5/3*self.num_sens), tight_layout=True)
         fig.text(0.5, -0.015, x_label, ha='center')
         fig.text(-0.015, 0.5, y_label, va='center', rotation='vertical')
 
@@ -218,7 +227,10 @@ class BinaryFileUnpack:
         
         for i in range(ax.shape[0]):
             for j in range(ax.shape[1]):
-                ax[i][j].plot(x[ax.shape[1]*i+j] if x.shape[0] == y.shape[0] else x, y[ax.shape[1]*i+j], color=color)
+                if plot_type == 'line':
+                    ax[i][j].plot(x[ax.shape[1]*i+j] if x.shape[0] == y.shape[0] else x, y[ax.shape[1]*i+j], color=color)
+                elif plot_type == 'scatter':
+                    ax[i][j].scatter(x[ax.shape[1]*i+j] if x.shape[0] == y.shape[0] else x, y[ax.shape[1]*i+j], color=color, s=3)
                 ax[i][j].set_xscale(x_axis_type)
                 ax[i][j].set_title(f"Sensor {ax.shape[1]*i+j+1}")
                 if x_range is not None:
@@ -229,7 +241,6 @@ class BinaryFileUnpack:
                          plots_shape:tuple, color=None, x_axis_type:str='linear', output_format:str='file'):
         '''
         Outputs a plot of the sensor data against a time series. Implements a HoverTool and a CrossHairTool for the user to analyze the data.
-
         Parameters:
             x (ndarray): A (1-D) array of the time series or (2-D) array of the frequency data. If 2-D, axis convention follows that of the param y.
             y (ndarray): A 2-dimensional array with the sensor data or power spectrum. 
@@ -239,7 +250,7 @@ class BinaryFileUnpack:
             y_label (str): The type of sensor data along with its units.
             plots_shape (tuple): The shape of the plots in the output in terms of number of rows and columns. Input should be (rows, cols).
             color (Any): Identifies the line_color feature of each line glyph for the plots. Allowed inputs are those allowed by line_color (default is element in bokeh.palettes.Turbo6).
-            x_axis_type ('linear', 'log'): The scale of the x-axis, either can be a linear axis (='linear;) or logarithmic axis (='log'). Default is 'linear'. 'log' option has bugs with the x-axis labels due to log(0) errors.                 
+            x_axis_type ('linear', 'log'): The scale of the x-axis, either can be a linear axis (='linear;) or logarithmic axis (='log'). Default is 'linear'. 
             output_format ('file', 'notebook'): Outputting a file in either a .html file (='file') or within the notebook (='notebook'). Default is 'file'.
         
         Raises:
@@ -297,19 +308,15 @@ class BinaryFileUnpack:
             // Getting x-data (shared between all sources)
             var x_arr = sources[0].data['x'];
             var x_range = cb_obj.value;
-
             // Getting indices of range slider
             var start_ind = x_arr.indexOf(x_range[0]);
             var end_ind = x_arr.indexOf(x_range[1]);
-
             if (start_ind == -1) {
                 start_ind = 0;
             }
-
             if (end_ind == -1) {
                 end_ind = x_arr.length - 1;
             }
-
             // Iterate through all the sensors
             for (let i = 0; i < plots.length; i++) {
                 // Sensor number
