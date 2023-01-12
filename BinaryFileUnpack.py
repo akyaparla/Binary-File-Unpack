@@ -188,8 +188,8 @@ class BinaryFileUnpack:
             Pxx[:, i, :] = np.stack([f, power])
         return Pxx
 
-    def plot_static(self, x:np.ndarray, y:np.ndarray, x_label:str, y_label:str, plots_shape:tuple, 
-                    color:str='blue', x_axis_type:str='linear', x_range:tuple=None, sharex=True, plot_type='line'):
+    def plot_static(self, x:np.ndarray, y:np.ndarray, x_label:str, y_label:str, plots_shape:tuple, color:str='blue', 
+                    x_axis_type:str='linear', x_range:tuple=None, sharex=True, plot_type='line', figfilename:str=None):
         '''
         Outputs a static plot of the sensor data against a time series. Utilizes the matplotlib module.
 
@@ -236,6 +236,9 @@ class BinaryFileUnpack:
                 if x_range is not None:
                     if len(x_range) != 2: raise IndexError(f"x_range should contain only 2 values, has {len(x_range)}.")
                     ax[i][j].set_xlim(x_range)
+
+        if figfilename is not None:
+            fig.savefig(figfilename,transparent=True)
 
     def plot_interactive(self, x:np.ndarray, y:np.ndarray, x_label:str, y_label:str, 
                          plots_shape:tuple, color=None, x_axis_type:str='linear', output_format:str='file'):
