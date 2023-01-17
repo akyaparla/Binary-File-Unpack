@@ -156,13 +156,15 @@ class BinaryFileUnpack:
                 self.T[i] += temp_convert(sens_corr[j, 3] + 1.478) - 25
 
     
-    def spectra(self, data_spec:np.ndarray) -> np.ndarray:
+    def spectra(self, data_spec: np.ndarray, freq_type:str='pgram', freq_range: type=None) -> np.ndarray:
         '''
         Returns the frequencies (in Hertz) and the power (in deciBels) present in the spectrum of the data. Utilizes the scipy module to return the spectrum.
 
         Parameters:
             data_spec (ndarray): Frequencies contatining the data for each sensor. The array is 2-dimensional: the first axis is the sensor index and the second axis is the data.
-        
+            freq_type (str): Chooses between the options ('pgram', 'lombscargle'). Periodogram is recommended for eruption data, Lomb-Scargle is recommended for oscillation data.
+            freq_range (tuple[float]): Range of desired frequencies. Default is (0.01, self.fs//2). The first element has to be greater than 0, while the second has to be less 
+                    than self.fs//2, the Nyquist bound. Any frequencies outside this range will be converted to the default.
         Returns:
             Pxx (ndarray): The resulting 3-dimensional array storing frequency and power data of the complete spectrum.
                 First axis: Index 0 is frequency data, index 1 is power data.
@@ -173,19 +175,40 @@ class BinaryFileUnpack:
         import scipy.signal as signal
         # Length of first axis indicates number of sensors
         # Length of second axis is number of data points
-        
+
         # Reshape array to 2D if one sensor is available
         if len(data_spec.shape) == 1:
             data_spec = np.reshape(data_spec, (1, len(data_spec)))
-        
+
         spec_sens = data_spec.shape[0]
         N = data_spec.shape[1]
-            
-        Pxx = np.empty((2, spec_sens, N//2 + 1))
+
+        # Lomb-Scargle Approach
+        length = 5000
+        # Range of angular frequencies
+        w = np.linspace(2*np.pi*0.01, 2*np.pi*self.fs/2, length)
+        if freq_range is not None:
+            # Correcting out of bounds freqs
+            if freq_range[0] <= 0:
+                freq_range[0] = 0.01
+            if freq_range[1] >= self.fs/2:
+                freq_range[1] = self.fs/2
+            w = np.linspace(2*np.pi*freq_range[0], 2*np.pi*freq_range[1], length)
+
+        Pxx = np.empty((2, spec_sens, length))
         for i in range(spec_sens):
-            f, Pper_spec = signal.periodogram(data_spec[i], self.fs, 'cosine', scaling='density')
-            power = 10 * np.log10(Pper_spec)
-            Pxx[:, i, :] = np.stack([f, power])
+            pgram = signal.lombscargle(
+                self.time[:N], data_spec[i], freqs=w, precenter=True)
+            power = 10 * np.log10(pgram)
+            Pxx[:, i, :] = np.stack([w/(2*np.pi), power])
+
+        # Periodogram approach
+        # Pxx = np.empty((2, spec_sens, N//2 + 1))
+        # for i in range(spec_sens):
+        #     f, Pper_spec = signal.periodogram(data_spec[i], self.fs, 'cosine', scaling='density')
+        #     power = 10 * np.log10(Pper_spec)
+        #     Pxx[:, i, :] = np.stack([f, power])
+
         return Pxx
 
     def plot_static(self, x:np.ndarray, y:np.ndarray, x_label:str, y_label:str, plots_shape:tuple, color:str='blue', 
