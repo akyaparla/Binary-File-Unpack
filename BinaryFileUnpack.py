@@ -183,31 +183,33 @@ class BinaryFileUnpack:
         spec_sens = data_spec.shape[0]
         N = data_spec.shape[1]
 
-        # Lomb-Scargle Approach
-        length = 5000
-        # Range of angular frequencies
-        w = np.linspace(2*np.pi*0.01, 2*np.pi*self.fs/2, length)
-        if freq_range is not None:
-            # Correcting out of bounds freqs
-            if freq_range[0] <= 0:
-                freq_range[0] = 0.01
-            if freq_range[1] >= self.fs/2:
-                freq_range[1] = self.fs/2
-            w = np.linspace(2*np.pi*freq_range[0], 2*np.pi*freq_range[1], length)
-
-        Pxx = np.empty((2, spec_sens, length))
-        for i in range(spec_sens):
-            pgram = signal.lombscargle(
-                self.time[:N], data_spec[i], freqs=w, precenter=True)
-            power = 10 * np.log10(pgram)
-            Pxx[:, i, :] = np.stack([w/(2*np.pi), power])
-
         # Periodogram approach
-        # Pxx = np.empty((2, spec_sens, N//2 + 1))
-        # for i in range(spec_sens):
-        #     f, Pper_spec = signal.periodogram(data_spec[i], self.fs, 'cosine', scaling='density')
-        #     power = 10 * np.log10(Pper_spec)
-        #     Pxx[:, i, :] = np.stack([f, power])
+        if freq_type == 'pgram':
+            Pxx = np.empty((2, spec_sens, N//2 + 1))
+            for i in range(spec_sens):
+                f, Pper_spec = signal.periodogram(data_spec[i], self.fs, 'cosine', scaling='density')
+                power = 10 * np.log10(Pper_spec)
+                Pxx[:, i, :] = np.stack([f, power])
+        # Lomb-Scargle Approach
+        elif freq_type == 'lombscargle':
+            length = 5000
+            # Range of angular frequencies
+            w = np.linspace(2*np.pi*0.01, 2*np.pi*self.fs/2, length)
+            if freq_range is not None:
+                # Correcting out of bounds freqs
+                if freq_range[0] <= 0:
+                    freq_range[0] = 0.01
+                if freq_range[1] >= self.fs/2:
+                    freq_range[1] = self.fs/2
+                w = np.linspace(2*np.pi*freq_range[0], 2*np.pi*freq_range[1], length)
+
+            Pxx = np.empty((2, spec_sens, length))
+
+            for i in range(spec_sens):
+                pgram = signal.lombscargle(
+                    self.time[:N], data_spec[i], freqs=w, precenter=True)
+                power = 10 * np.log10(pgram)
+                Pxx[:, i, :] = np.stack([w/(2*np.pi), power])
 
         return Pxx
 
