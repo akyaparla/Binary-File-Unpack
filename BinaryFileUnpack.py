@@ -156,15 +156,12 @@ class BinaryFileUnpack:
                 self.T[i] += temp_convert(sens_corr[j, 3] + 1.478) - 25
 
     
-    def spectra(self, data_spec: np.ndarray, freq_type:str='pgram', freq_range: type=None) -> np.ndarray:
+    def spectra(self, data_spec: np.ndarray) -> np.ndarray:
         '''
         Returns the frequencies (in Hertz) and the power (in deciBels) present in the spectrum of the data. Utilizes the scipy module to return the spectrum.
 
         Parameters:
             data_spec (ndarray): Frequencies contatining the data for each sensor. The array is 2-dimensional: the first axis is the sensor index and the second axis is the data.
-            freq_type (str): Chooses between the options ('pgram', 'lombscargle'). Periodogram is recommended for eruption data, Lomb-Scargle is recommended for oscillation data.
-            freq_range (tuple[float]): Range of desired frequencies. Default is (0.01, self.fs//2). The first element has to be greater than 0, while the second has to be less 
-                    than self.fs//2, the Nyquist bound. Any frequencies outside this range will be converted to the default.
         Returns:
             Pxx (ndarray): The resulting 3-dimensional array storing frequency and power data of the complete spectrum.
                 First axis: Index 0 is frequency data, index 1 is power data.
@@ -184,37 +181,16 @@ class BinaryFileUnpack:
         N = data_spec.shape[1]
 
         # Periodogram approach
-        if freq_type == 'pgram':
-            Pxx = np.empty((2, spec_sens, N//2 + 1))
-            for i in range(spec_sens):
-                f, Pper_spec = signal.periodogram(data_spec[i], self.fs, 'cosine', scaling='density')
-                power = 10 * np.log10(Pper_spec)
-                Pxx[:, i, :] = np.stack([f, power])
-        # Lomb-Scargle Approach
-        elif freq_type == 'lombscargle':
-            length = 5000
-            # Range of angular frequencies
-            w = np.linspace(2*np.pi*0.01, 2*np.pi*self.fs/2, length)
-            if freq_range is not None:
-                # Correcting out of bounds freqs
-                if freq_range[0] <= 0:
-                    freq_range[0] = 0.01
-                if freq_range[1] >= self.fs/2:
-                    freq_range[1] = self.fs/2
-                w = np.linspace(2*np.pi*freq_range[0], 2*np.pi*freq_range[1], length)
-
-            Pxx = np.empty((2, spec_sens, length))
-
-            for i in range(spec_sens):
-                pgram = signal.lombscargle(
-                    self.time[:N], data_spec[i], freqs=w, precenter=True)
-                power = 10 * np.log10(pgram)
-                Pxx[:, i, :] = np.stack([w/(2*np.pi), power])
+        Pxx = np.empty((2, spec_sens, N//2 + 1))
+        for i in range(spec_sens):
+            f, Pper_spec = signal.periodogram(data_spec[i], self.fs, 'cosine', scaling='density')
+            power = 10 * np.log10(Pper_spec)
+            Pxx[:, i, :] = np.stack([f, power])
 
         return Pxx
 
-    def plot_static(self, x:np.ndarray, y:np.ndarray, x_label:str, y_label:str, plots_shape:tuple, color:str='blue', 
-                    x_axis_type:str='linear', x_range:tuple=None, sharex=True, plot_type='line', figfilename:str=None):
+    def plot_static(self, x:np.ndarray, y:np.ndarray, x_label:str, y_label:str, plots_shape:tuple, color:str='blue', x_axis_type:str='linear', 
+                    ordering:list=None, x_range:tuple=None, sharex=True, plot_type='line', figfilename:str=None):
         '''
         Outputs a static plot of the sensor data against a time series. Utilizes the matplotlib module.
 
@@ -228,6 +204,8 @@ class BinaryFileUnpack:
             plots_shape (tuple): The shape of the plots in the output in terms of number of rows and columns. Input should be (rows, cols).
             color (Any): Identifies the line_color feature of each line glyph for the plots. Allowed inputs are those allowed by line_color (default is element in bokeh.palettes.Turbo6).
             x_axis_type ('linear', 'log'): The scale of the x-axis, either can be a linear axis (='linear;) or logarithmic axis (='log'). Default is 'linear'.
+            ordering (list): A custom ordering of the sensor plot data. Indicate the sensor index (starting from 0), not the number.
+                            Will throw a AssertError if len(ordering) != y.shape[0] or max(ordering) != y.shape[0] - 1.
             x_range (tuple): The lower and upper bounds of the x-axis.
             sharex (bool): If true, the plots will share the same x-scale. Otherwise, they will have independent scales.
             plot_type ('line', 'scatter'): Defines the type of plot displayed. Default is 'line'.
@@ -250,17 +228,31 @@ class BinaryFileUnpack:
         elif plots_shape[1] == 1:
             ax = np.reshape(ax, (plots_shape[0], 1))
         
-        for i in range(ax.shape[0]):
-            for j in range(ax.shape[1]):
-                if plot_type == 'line':
-                    ax[i][j].plot(x[ax.shape[1]*i+j] if x.shape[0] == y.shape[0] else x, y[ax.shape[1]*i+j], color=color)
-                elif plot_type == 'scatter':
-                    ax[i][j].scatter(x[ax.shape[1]*i+j] if x.shape[0] == y.shape[0] else x, y[ax.shape[1]*i+j], color=color, s=3)
-                ax[i][j].set_xscale(x_axis_type)
-                ax[i][j].set_title(f"Sensor {ax.shape[1]*i+j+1}")
-                if x_range is not None:
-                    if len(x_range) != 2: raise IndexError(f"x_range should contain only 2 values, has {len(x_range)}.")
-                    ax[i][j].set_xlim(x_range)
+        if ordering is None:
+            ordering = range(y.shape[0])
+        assert len(ordering) == y.shape[0] and max(ordering) == y.shape[0]-1, f"Make sure ordering contains correct sensor numbers from 1 to {y.shape[0]}."
+        for count, ind_sens in enumerate(ordering):
+            # Determining where sensors are on plot
+            i = count // ax.shape[1]
+            j = count % ax.shape[1]
+
+            if x.shape[0] == y.shape[0]:
+                x_select = x[ind_sens]
+            else:
+                x_select = x
+        
+            # Plotting graphs
+            if plot_type == 'line':
+                ax[i][j].plot(x_select, y[ind_sens], color=color)
+            elif plot_type == 'scatter':
+                ax[i][j].scatter(x_select, y[ind_sens], color=color, s=3)
+            
+            # Additional plot features
+            ax[i][j].set_xscale(x_axis_type)
+            ax[i][j].set_title(f"Sensor {ind_sens + 1}")
+            if x_range is not None:
+                if len(x_range) != 2: raise IndexError(f"x_range should contain only 2 values, has {len(x_range)}.")
+                ax[i][j].set_xlim(x_range)
 
         if figfilename is not None:
             fig.savefig(figfilename,transparent=True)
