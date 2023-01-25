@@ -144,7 +144,7 @@ class BinaryFileUnpack:
         ])
 
         # Numpy array with sensor SN with index corresponding to position
-        sens_used = np.array([5122778, 5122770, 5940428, 5122769, 5122777, 5940430])
+        sens_used = np.array([5122778, 5122769, 5940428, 5122770, 5122777, 5940430])
 
         # Apply temperature and pressure corrections
         for i in range(len(sens_used)):
@@ -155,7 +155,29 @@ class BinaryFileUnpack:
                 self.P[i] += sens_corr[j, 1]
                 self.T[i] += temp_convert(sens_corr[j, 3] + 1.478) - 25
 
-    
+        # Futher calibration to the atmospheric pressure
+        # Apply correction as Pcorr = A*P + B
+        # first column is serial number
+        # Second column are A coefficents
+        # Third column are B coefficents
+        sens_atm = np.array([
+            [5122778,  1.05029088,  -0.298257335],
+            [5122769,  1.04999036,  -0.294259218],
+            [5940428, 0.874466484, -0.0786998490],
+            [5122770,  1.17073226,  -0.452581661],
+            [5122777, 0.933776111,  -0.158336162],
+            [5940430,  1.00000000,   0.000000000]
+        ])
+
+        # Apply corrections to sensors
+        for i in range(len(sens_used)):
+            # See if correction can be applied to the sensor
+            ind_arr = np.where(sens_corr[:, 0] == sens_used[i])[0]
+            if len(ind_arr) > 0:
+                j = ind_arr[0]
+                self.P[i] = sens_atm[j, 1] * self.P[i] + sens_atm[j, 2]
+        
+
     def spectra(self, data_spec: np.ndarray) -> np.ndarray:
         '''
         Returns the frequencies (in Hertz) and the power (in deciBels) present in the spectrum of the data. Utilizes the scipy module to return the spectrum.
@@ -189,8 +211,9 @@ class BinaryFileUnpack:
 
         return Pxx
 
-    def plot_static(self, x:np.ndarray, y:np.ndarray, x_label:str, y_label:str, plots_shape:tuple, color:str='blue', x_axis_type:str='linear', 
-                    ordering:list=None, x_range:tuple=None, sharex=True, plot_type='line', figfilename:str=None):
+    def plot_static(self, x:np.ndarray, y:np.ndarray, x_label:str, y_label:str, plots_shape:tuple, color:str='blue', 
+                    y2:np.ndarray=None, y2_label:str=None, color2:str='red', x_axis_type:str='linear', ordering:list=None,
+                    x_range:tuple=None, sharex=True, plot_type='line', figfilename:str=None):
         '''
         Outputs a static plot of the sensor data against a time series. Utilizes the matplotlib module.
 
@@ -202,7 +225,10 @@ class BinaryFileUnpack:
             x_label (str): The name of the data that defines the x-axis.
             y_label (str): The type of sensor data along with its units.
             plots_shape (tuple): The shape of the plots in the output in terms of number of rows and columns. Input should be (rows, cols).
-            color (Any): Identifies the line_color feature of each line glyph for the plots. Allowed inputs are those allowed by line_color (default is element in bokeh.palettes.Turbo6).
+            color (Any): Identifies the line_color feature of each line glyph for the plots. Allowed inputs are those allowed by line_color. Default is 'blue'.
+            y2 (ndarray): An optional second array that is of the same dimension as :param: y. Will be plotted alongside y with an additional axis.
+            y2_label (str): The type of secondary sensor data along with its units.
+            color2 (str): The color of the optional second data array. Default is 'red'.
             x_axis_type ('linear', 'log'): The scale of the x-axis, either can be a linear axis (='linear;) or logarithmic axis (='log'). Default is 'linear'.
             ordering (list): A custom ordering of the sensor plot data. Indicate the sensor index (starting from 0), not the number.
                             Will throw a AssertError if len(ordering) != y.shape[0] or max(ordering) != y.shape[0] - 1.
@@ -220,6 +246,7 @@ class BinaryFileUnpack:
             raise ValueError(f"Plot dimension does not match number of plots. Plot Dimension: {plots_shape}, Number of plots: {y.shape[0]}")
 
         fig, ax = plt.subplots(plots_shape[0], plots_shape[1], sharex=sharex, figsize=(10, 5/3*self.num_sens), tight_layout=True)
+
         fig.text(0.5, -0.015, x_label, ha='center')
         fig.text(-0.015, 0.5, y_label, va='center', rotation='vertical')
 
@@ -228,9 +255,21 @@ class BinaryFileUnpack:
         elif plots_shape[1] == 1:
             ax = np.reshape(ax, (plots_shape[0], 1))
         
+        # Create a seperate vertical axis if secondary data source is provided
+        if y2 is not None:
+            assert y2.shape == y.shape, f"Additional data shape of {y2.shape} does not match primary data shape of {y.shape}."
+
+            if y2_label is not None:
+                fig.text(1.015, 0.5, y2_label, va='center', rotation=-90)
+
+            ax2 = np.empty(ax.shape, dtype=object)
+            for i in range(ax2.shape[0]):
+                for j in range(ax2.shape[1]):
+                    ax2[i][j] = ax[i][j].twinx()
+        
         if ordering is None:
             ordering = range(y.shape[0])
-        assert len(ordering) == y.shape[0] and max(ordering) == y.shape[0]-1, f"Make sure ordering contains correct sensor numbers from 1 to {y.shape[0]}."
+        assert len(ordering) == y.shape[0] and max(ordering) == y.shape[0]-1, f"Make sure ordering contains correct sensor numbers from 0 to {y.shape[0]-1}."
         for count, ind_sens in enumerate(ordering):
             # Determining where sensors are on plot
             i = count // ax.shape[1]
@@ -244,8 +283,15 @@ class BinaryFileUnpack:
             # Plotting graphs
             if plot_type == 'line':
                 ax[i][j].plot(x_select, y[ind_sens], color=color)
+                if y2 is not None:
+                    # Plot second data source
+                    ax2[i][j].plot(x_select, y2[ind_sens], color=color2)
+
             elif plot_type == 'scatter':
-                ax[i][j].scatter(x_select, y[ind_sens], color=color, s=3)
+                ax[i][j].scatter(x_select, y[ind_sens], color=color, s=2)
+                if y2 is not None:
+                    # Plot second data source
+                    ax2[i][j].scatter(x_select, y2[ind_sens], color=color2, s=2)
             
             # Additional plot features
             ax[i][j].set_xscale(x_axis_type)
