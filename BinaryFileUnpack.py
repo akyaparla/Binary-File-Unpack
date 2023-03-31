@@ -146,14 +146,14 @@ class BinaryFileUnpack:
         # Numpy array with sensor SN with index corresponding to position
         sens_used = np.array([5122778, 5122769, 5940428, 5122770, 5122777, 5940430])
 
-        # # Apply temperature and pressure corrections
-        # for i in range(len(sens_used)):
-        #     # See if correction can be applied to the sensor
-        #     ind_arr = np.where(sens_corr[:, 0] == sens_used[i])[0]
-        #     if len(ind_arr) > 0:
-        #         j = ind_arr[0]
+        # Apply temperature and pressure corrections
+        for i in range(len(sens_used)):
+            # See if correction can be applied to the sensor
+            ind_arr = np.where(sens_corr[:, 0] == sens_used[i])[0]
+            if len(ind_arr) > 0:
+                j = ind_arr[0]
         #         self.P[i] += sens_corr[j, 1]
-        #         self.T[i] += temp_convert(sens_corr[j, 3] + 1.478) - 25
+                self.T[i] += temp_convert(sens_corr[j, 3] + 1.478) - 25
 
         # Futher calibration to the atmospheric pressure
         # Apply correction as Pcorr = A*P + B
