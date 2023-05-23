@@ -34,14 +34,17 @@ class BinaryFileUnpack:
             time (ndarray): The time series for the data given in self.P and self.T.
             offset: A variable to track the number of bytes transversed in the binary file. Primarily meant for internal use.
         '''
+
         self.fileName = fileName.replace('\\', '/')
-        
         self.offset = 0
 
         ## Parsing Metadata
-        fileVersion = self.getDtype('int32', 4)
-        self.fs:np.float32 = self.getDtype('float32', 4)
-        devCount = self.getDtype('uint32', 4)
+        with open(fileName, "rb") as file:
+            self.fileContent = file.read()   
+
+        fileVersion = self.getDtype('i', 4)
+        self.fs = self.getDtype('f', 4)
+        devCount = self.getDtype('I', 4)
 
         DevID = np.empty(devCount, np.int32)
         SNL = np.empty(devCount, np.uint32)
@@ -51,19 +54,18 @@ class BinaryFileUnpack:
         SN_lst = []
         Name_lst = []
         ChanNum_lst = []
-
         for i in range(devCount):
-            DevID[i] = self.getDtype('int32', 4)
+            DevID[i] = self.getDtype('i', 4)
             
-            SNL[i] = self.getDtype('uint32', 4)
-            SN_lst.append(self.getDtype('int8', 1, SNL[i]))
+            SNL[i] = self.getDtype('I', 4)
+            SN_lst.append(self.getDtype('b', 1, SNL[i]))
             
-            NameL[i] = self.getDtype('uint32', 4)
-            Name_lst.append(self.getDtype('int8', 1, NameL[i]))
+            NameL[i] = self.getDtype('I', 4)
+            Name_lst.append(self.getDtype('b', 1, NameL[i]))
 
-            NumEnChan[i] = self.getDtype('uint32', 4)
-            ChanNum_lst.append(self.getDtype('int32', 4, NumEnChan[i]))
-
+            NumEnChan[i] = self.getDtype('I', 4)
+            ChanNum_lst.append(self.getDtype('i', 4, NumEnChan[i]))
+        
         # Converting Lists into Arrays
         SN = np.array(SN_lst)
         Name = np.array(Name_lst)
@@ -93,23 +95,26 @@ class BinaryFileUnpack:
         status = False  # EOF marker
         c = 0
         Trel = 0
-        self.data = np.empty((10000, NumEnChan[0], devCount))
-
+        self.data = np.empty((int(1e7), NumEnChan[0], devCount))
+        NS_sum = 0
         while not status:
             for i in range(devCount):
-                Tsec = self.getDtype('uint64', 8)
-                TNsec = self.getDtype('uint32', 4)
-                NS = self.getDtype('uint32', 4)
+                Tsec = self.getDtype('Q', 8)
+                TNsec = self.getDtype('I', 4)
+                NS = self.getDtype('I', 4)
+                NS_sum+=NS
                 Nt = NS // NumEnChan[i]
-                d = self.getDtype('float32', 4, NumEnChan[i]*Nt).reshape((NumEnChan[i], Nt), order='F')
+                d = self.getDtype('f', 4, NumEnChan[i]*Nt).reshape((Nt, NumEnChan[i]))
                 if c >= self.data.shape[0]:
-                    tmp = np.empty((c+Nt, NumEnChan[0], devCount))
+                    tmp = np.empty((self.data.shape[0]*10, NumEnChan[0], devCount))
                     tmp[:c, :, :] = self.data
                     self.data = tmp
-                self.data[c:c+Nt, :, i] = d.T
-            
+                self.data[c:c+Nt, :, i] = d
+
             c += Nt
             status = BinaryFileUnpack.endOfFile(self)
+            
+        self.data = self.data[:NS_sum//12]
 
         ## Getting Temperature and Pressure Data
         def temp_convert(temp) -> float:
@@ -146,16 +151,16 @@ class BinaryFileUnpack:
         # Numpy array with sensor SN with index corresponding to position
         sens_used = np.array([5122778, 5122769, 5940428, 5122770, 5122777, 5940430])
 
-        # Apply temperature and pressure corrections
+        # # Apply temperature and pressure corrections
         for i in range(len(sens_used)):
             # See if correction can be applied to the sensor
             ind_arr = np.where(sens_corr[:, 0] == sens_used[i])[0]
             if len(ind_arr) > 0:
                 j = ind_arr[0]
-        #         self.P[i] += sens_corr[j, 1]
+                self.P[i] += sens_corr[j, 1]
                 self.T[i] += temp_convert(sens_corr[j, 3] + 1.478) - 25
 
-        # Futher calibration to the atmospheric pressure
+        # Futher calibration to the atmospheric pressure (linear map)
         # Apply correction as Pcorr = A*P + B
         # first column is serial number
         # Second column are A coefficents
@@ -177,6 +182,27 @@ class BinaryFileUnpack:
         #         j = ind_arr[0]
         #         self.P[i] = sens_atm[j, 1] * self.P[i] + sens_atm[j, 2]
         
+        # Futher calibration to the atmospheric pressure (constant map)
+        # Apply correction as Pcorr = A*P + B
+        # first column is serial number
+        # Second column are constant corrections
+        sens_atm = np.array([
+            [5122778, -0.23539],
+            [5122769, -0.23194],
+            [5940428, -0.23564],
+            [5122770, -0.23862],
+            [5122777, -0.24152],
+            [5940430,  0.00000],
+        ])
+
+        # Apply corrections to sensors
+        for i in range(len(sens_used)):
+            # See if correction can be applied to the sensor
+            ind_arr = np.where(sens_corr[:, 0] == sens_used[i])[0]
+            if len(ind_arr) > 0:
+                j = ind_arr[0]
+                self.P[i] = self.P[i] + sens_atm[j, 1]
+
 
     def spectra(self, data_spec: np.ndarray) -> np.ndarray:
         '''
@@ -213,7 +239,7 @@ class BinaryFileUnpack:
 
     def plot_static(self, x:np.ndarray, y:np.ndarray, x_label:str, y_label:str, plots_shape:tuple, color:str='blue', 
                     y2:np.ndarray=None, y2_label:str=None, color2:str='red', x_axis_type:str='linear', ordering:list=None,
-                    x_range:tuple=None, sharex=True, plot_type='line', figfilename:str=None):
+                    x_range:tuple=None, sharex=True, plot_type='line', t1=None, t2=None, figfilename:str=None):
         '''
         Outputs a static plot of the sensor data against a time series. Utilizes the matplotlib module.
 
@@ -288,7 +314,11 @@ class BinaryFileUnpack:
                     ax2[i][j].plot(x_select, y2[ind_sens], color=color2)
 
             elif plot_type == 'scatter':
-                ax[i][j].scatter(x_select, y[ind_sens], color=color, s=2)
+                if color == "time":
+                    # Colormap by time
+                    ax[i][j].scatter(x_select, y[ind_sens], c=self.time[t1:t2], cmap="summer", s=2)
+                else:
+                    ax[i][j].scatter(x_select, y[ind_sens], color=color, s=2)
                 if y2 is not None:
                     # Plot second data source
                     ax2[i][j].scatter(x_select, y2[ind_sens], color=color2, s=2)
@@ -298,7 +328,8 @@ class BinaryFileUnpack:
             ax[i][j].set_title(f"Sensor {ind_sens + 1}")
             if x_range is not None:
                 if len(x_range) != 2: raise IndexError(f"x_range should contain only 2 values, has {len(x_range)}.")
-                ax[i][j].set_xlim(x_range)
+                range_x = x_range[1] - x_range[0]
+                ax[i][j].set_xlim((x_range[0] - range_x*0.1, x_range[1] + range_x*0.1))
 
         if figfilename is not None:
             fig.savefig(figfilename,transparent=True)
@@ -400,6 +431,7 @@ class BinaryFileUnpack:
                 // Dynamically changing the axis range
                 plots[i].y_range.start = min - range/25;
                 plots[i].y_range.end = max + range/25;
+                console.log(min)
             }
             """
             ))
@@ -448,23 +480,26 @@ class BinaryFileUnpack:
             raise ValueError(f"{output_format} is not a valid option for output_format. Allowed options are 'file' and 'notebook'")
         show(grid)
 
-    def getDtype(self, type, numByte:int, size:int=1):
+    def getDtype(self, typeStr:str, numBytes:int, numObjects:int=1):
         '''
         Method to read the bytes of a file as a given data type. Main purpose is to be used in __init__ method.
 
         Parameters:
-            type: Type of data type to read. Examples include 'float32', np.int8, etc.
-            numByte: The number of bytes for 1 unit of the type. For example, 'float32' reads 4 bytes at a time, and np.int8 reads 1 byte at a time.
-            size (int): The number of the inputted data type to read. Default is 1.
+            typeStr (str): String containing data types of requested objects. See https://docs.python.org/3/library/struct.html#format-characters
+            numBytes (int): The number of bytes for all data types indicated in @typeStr
+            numObjects (int): The number of the inputted typeStr to read. Default is 1.
 
         Returns:
             Either an object of type np.ndarray or the indicated data type (param type) containing said data types read from the file.
         '''
+        import struct
         tmp = self.offset
-        self.offset += numByte*size
-        if size == 1:
-            return np.fromfile(self.fileName, dtype=type, offset=tmp)[0]
-        return np.fromfile(self.fileName, dtype=type, offset=tmp)[:size]
+        self.offset += numBytes*numObjects
+        # Total number of requested objects
+        totNumObjects = int(numObjects*len(typeStr))
+        if totNumObjects == 1:
+            return struct.unpack(typeStr, self.fileContent[tmp:self.offset])[0]
+        return np.array(struct.unpack(typeStr*numObjects, self.fileContent[tmp:self.offset]))
 
     def endOfFile(self) -> bool:
         '''
