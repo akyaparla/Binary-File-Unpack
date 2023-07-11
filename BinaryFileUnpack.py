@@ -155,7 +155,7 @@ class BinaryFileUnpack:
         T = np.empty((self.num_sens, self.data.shape[0]))
         for i in range(devCount):
             T[2*i]   = temp_convert(self.data[:, 1, i], sens_used[order[2*i]])
-            T[2*i+1] = temp_convert(self.data[:, 3, i], sens_used[order[2*i]])
+            T[2*i+1] = temp_convert(self.data[:, 3, i], sens_used[order[2*i+1]])
             P[2*i]   = self.data[:, 0, i]
             P[2*i+1] = self.data[:, 2, i]
 
@@ -190,54 +190,11 @@ class BinaryFileUnpack:
                 # self.P[i] += sens_corr[j, 1]
                 # self.T[i] += temp_convert(sens_corr[j, 3] + 1.478) - 25
 
-        # Futher calibration to the absolute pressure (linear map)
-        # Apply correction as Pcorr = A*P + B
-        # first column is serial number
-        # Second column are A coefficents
-        # Third column are B coefficents
-        sens_atm1 = np.array([
-            [5122778,  1.05029088,  -0.298257335],
-            [5122769,  1.04999036,  -0.294259218],
-            [5940428, 0.874466484, -0.0786998490],
-            [5122770,  1.17073226,  -0.452581661],
-            [5122777, 0.933776111,  -0.158336162],
-            [5940430,  1.00000000,   0.000000000]
-        ])
-
-        # # Apply corrections to sensors
-        # for i in range(len(sens_used)):
-        #     # See if correction can be applied to the sensor
-        #     ind_arr = np.where(sens_corr[:, 0] == sens_used[i])[0]
-        #     if len(ind_arr) > 0:
-        #         j = ind_arr[0]
-        #         self.P[i] = sens_atm[j, 1] * self.P[i] + sens_atm[j, 2]
-        
-        # Futher calibration to the absolute pressure (constant map)
-        # Apply correction as Pcorr = A*P + B
-        # first column is serial number
-        # Second column are constant corrections
-        sens_atm2 = np.array([
-            [5122778, -0.23539],
-            [5122769, -0.23194],
-            [5940428, -0.23564],
-            [5122770, -0.23862],
-            [5122777, -0.24152],
-            [5940430,  0.00000],
-        ])
-
-        # # Apply corrections to sensors
-        # for i in range(len(sens_used)):
-        #     # See if correction can be applied to the sensor
-        #     ind_arr = np.where(sens_corr[:, 0] == sens_used[i])[0]
-        #     if len(ind_arr) > 0:
-        #         j = ind_arr[0]
-        #         self.P[i] = self.P[i] + sens_atm[j, 1]
-
-        # Futher calibration to the absolute pressure (constant offset)
+        # Calibration to the absolute pressure (constant offset)
         # first column is serial number
         # Second column is offset to absolute pressure
         # Third column are standard deviations of the offsets
-        sens_atm3 = np.array([
+        sens_abs = np.array([
             [5122778, 0.22586478, 0.00115527],
             [5122769, 0.24026248, 0.00064523],
             [5940428, 0.2364321 , 0.00155191],
@@ -252,8 +209,8 @@ class BinaryFileUnpack:
             ind_arr = np.where(sens_corr[:, 0] == sens_used[i])[0]
             if len(ind_arr) > 0:
                 j = ind_arr[0]
-                self.P[i] = self.P[i] - sens_atm3[j, 1]
-                self.Pstd[i] = sens_atm3[j, 2]
+                self.P[i] = self.P[i] - sens_abs[j, 1]
+                self.Pstd[i] = sens_abs[j, 2]
 
     def spectra(self, data_spec: np.ndarray) -> np.ndarray:
         '''
@@ -325,7 +282,13 @@ class BinaryFileUnpack:
 
         if times is None:
             times = self.time
-        duration = np.max(times) - np.min(times)
+        # Find where provided time series is within overall series
+        start_ind = np.where(self.time == times[0])[0][0]
+        end_ind = np.where(self.time == times[-1])[0][0]
+        duration = (end_ind - start_ind) / self.fs
+
+        # Only look at y provided within time series
+        ydata = y[:, start_ind:end_ind+1]
 
         fig, ax = plt.subplots(plots_shape[0], plots_shape[1], sharex=sharex, figsize=(10, 5/3*self.num_sens), tight_layout=True)
 
@@ -340,6 +303,8 @@ class BinaryFileUnpack:
         # Create a seperate vertical axis if secondary data source is provided
         if y2 is not None:
             assert y2.shape == y.shape, f"Additional data shape of {y2.shape} does not match primary data shape of {y.shape}."
+            # Only look at y2 provided within time series
+            y2data = y2[:, start_ind:end_ind+1]
 
             if y2_label is not None:
                 fig.text(1.015, 0.5, y2_label, va='center', rotation=-90)
@@ -349,35 +314,36 @@ class BinaryFileUnpack:
                 for j in range(ax2.shape[1]):
                     ax2[i][j] = ax[i][j].twinx()
         
-        if ordering is None: ordering = np.arange(y.shape[0])
-        assert len(ordering) == y.shape[0] and max(ordering) == y.shape[0]-1, f"Make sure ordering contains correct sensor numbers from 0 to {y.shape[0]-1}."
+        if ordering is None: 
+            ordering = np.arange(ydata.shape[0])
+        assert len(ordering) == ydata.shape[0] and max(ordering) == ydata.shape[0]-1, f"Make sure ordering contains correct sensor numbers from 0 to {y.shape[0]-1}."
         for count, ind_sens in enumerate(ordering):
             # Determining where sensors are on plot
             i = count // ax.shape[1]
             j = count % ax.shape[1]
 
-            if x.shape[0] == y.shape[0]:
+            if x.shape[0] == ydata.shape[0]:
                 x_select = x[ind_sens]
             else:
-                x_select = x
+                x_select = times
         
             # Plotting graphs
             if plot_type == 'line':
-                ax[i][j].plot(x_select, y[ind_sens], color=color)
+                ax[i][j].plot(x_select, ydata[ind_sens], color=color)
                 if y2 is not None:
                     # Plot second data source
-                    ax2[i][j].plot(x_select, y2[ind_sens], color=color2)
+                    ax2[i][j].plot(x_select, y2data[ind_sens], color=color2)
 
             elif plot_type == 'scatter':
-                ax[i][j].scatter(x_select, y[ind_sens], color=color, s=2)
+                ax[i][j].scatter(x_select, ydata[ind_sens], color=color, s=2)
                 if y2 is not None:
                     # Plot second data source
-                    ax2[i][j].scatter(x_select, y2[ind_sens], color=color2, s=2)
+                    ax2[i][j].scatter(x_select, y2data[ind_sens], color=color2, s=2)
             
             # Additional plot features
             ax[i][j].set_xscale(x_axis_type)
             ax[i][j].set_title(f"Sensor {ind_sens + 1}")
-            ax[i][j].set_xlim((np.min(times) - duration*0.1, np.max(times) + duration*0.1))
+            ax[i][j].set_xlim((np.min(times) - duration*0.01, np.max(times) + duration*0.01))
 
         if figfilename is not None:
             fig.savefig(figfilename,transparent=True)
@@ -547,7 +513,10 @@ class BinaryFileUnpack:
         ordering = np.array(ordering)
         if times is None: 
             times = self.time
-        duration = np.max(times) - np.min(times)
+        start_ind = np.where(self.time == times[0])[0][0]
+        end_ind = np.where(self.time == times[-1])[0][0]
+        duration = (start_ind - end_ind) / self.fs
+
         # TODO: Build in "times" option
         # print(type(ordering))
         # T = self.T[:, times]
@@ -581,12 +550,14 @@ class BinaryFileUnpack:
             
             # 100 C and 1 bar lines
             if np.max(self.T[ind_sens]) > 100:
-                ax[count].plot([100, 100], [np.min(self.P[ind_sens]), np.max(self.P[ind_sens])], 'k--', alpha=0.5) 
-            ax[count].plot([min(np.min(self.T[ind_sens]), 100), np.max(self.T[ind_sens])], [1, 1], 'k--', alpha=0.5)
+                ax[count].plot([100, 100], [min(np.min(self.P[ind_sens]), 1), np.max(self.P[ind_sens])], 'k--', alpha=0.5)
+            if np.max(self.P[ind_sens]) > 1:
+                ax[count].plot([min(np.min(self.T[ind_sens]), 100), np.max(self.T[ind_sens])], [1, 1], 'k--', alpha=0.5)
             
             # Additional plot features
+            ax[count].invert_yaxis()
             ax[count].set_title(f"Sensor {ind_sens + 1}")
-            ax[count].legend(loc="lower right")
+            ax[count].legend(loc="upper right")
         # Colorbar
         fig.colorbar(data, ax=ax, shrink=0.9, label="Time (s)")
 
@@ -612,11 +583,10 @@ class BinaryFileUnpack:
         '''
         start_index = int(start * self.fs)
         end_index = int(end * self.fs)
-
         if start > end:
             raise ValueError(f"Start time must be less than end time.")
 
-        if start_index < 0 or end_index >= len(self.time):
+        if start_index < 0 or end_index-1 > len(self.time):
             raise ValueError(f"Provided times out of bounds, arguments must be between 0 and {round(len(self.time) / self.fs, 2)}.") 
                 
         return self.time[start_index:end_index]
