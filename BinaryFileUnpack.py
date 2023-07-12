@@ -515,12 +515,8 @@ class BinaryFileUnpack:
             times = self.time
         start_ind = np.where(self.time == times[0])[0][0]
         end_ind = np.where(self.time == times[-1])[0][0]
-        duration = (start_ind - end_ind) / self.fs
-
-        # TODO: Build in "times" option
-        # print(type(ordering))
-        # T = self.T[:, times]
-        # P = self.P[:, times]
+        P = self.P[:, start_ind:end_ind+1]
+        T = self.T[:, start_ind:end_ind+1]
 
         rows = ordering.shape[0]
         fig, ax = plt.subplots(rows, 1, sharex=sharex, figsize=(10, 5/3*rows), constrained_layout=True)
@@ -531,15 +527,24 @@ class BinaryFileUnpack:
         
         for count, ind_sens in enumerate(ordering):
             # Colormap by time
-            data = ax[count].scatter(self.T[ind_sens], self.P[ind_sens], c=times, cmap=cmap, s=2)
+            data = ax[count].scatter(T[ind_sens], P[ind_sens], c=times, cmap=cmap, s=2)
 
             # TODO: Use Steam Tables Instead of Approximation
             if show_phase_boundaries:
                 import pandas as pd
                 # From Eq (30). in http://twt.mpei.ac.ru/mcs/worksheets/iapws/IAPWS-IF97-Region4.xmcd
-                n = pd.read_csv("https://raw.githubusercontent.com/akyaparla/Binary-File-Unpack/main/iapws-if97-region4.csv")["ni"].to_numpy()
-                minT = np.min(self.T[ind_sens]) + 273.15
-                maxT = np.max(self.T[ind_sens]) + 273.15
+                try:
+                    n = pd.read_csv("https://raw.githubusercontent.com/akyaparla/Binary-File-Unpack/main/iapws-if97-region4.csv")["ni"].to_numpy()
+                except:
+                    try:
+                        n = pd.read_csv("iapws-if97-region4.csv")["ni"].to_numpy()
+                    except:
+                        import warnings
+                        warnings.warn("iapws-if97-region4.csv not found, skipping phase boundaries", ResourceWarning)
+                        continue
+                    
+                minT = np.min(T[ind_sens]) + 273.15
+                maxT = np.max(T[ind_sens]) + 273.15
                 Trange = np.linspace(minT, maxT)
                 theta = Trange + n[8] / (Trange - n[9])
                 A =      theta**2 + n[0]*theta + n[1]
@@ -549,10 +554,10 @@ class BinaryFileUnpack:
                 ax[count].plot(Trange - 273.15, Pcurve, 'r--', label="Phase Boundary")
             
             # 100 C and 1 bar lines
-            if np.max(self.T[ind_sens]) > 100:
-                ax[count].plot([100, 100], [min(np.min(self.P[ind_sens]), 1), np.max(self.P[ind_sens])], 'k--', alpha=0.5)
-            if np.max(self.P[ind_sens]) > 1:
-                ax[count].plot([min(np.min(self.T[ind_sens]), 100), np.max(self.T[ind_sens])], [1, 1], 'k--', alpha=0.5)
+            if np.max(T[ind_sens]) > 100 and np.min(T[ind_sens]) < 100:
+                ax[count].plot([100, 100], [min(np.min(P[ind_sens]), 1), np.max(P[ind_sens])], 'k--', alpha=0.5)
+            if np.max(P[ind_sens]) > 1 and np.min(P[ind_sens]) < 1:
+                ax[count].plot([min(np.min(T[ind_sens]), 100), np.max(T[ind_sens])], [1, 1], 'k--', alpha=0.5)
             
             # Additional plot features
             ax[count].invert_yaxis()
@@ -562,7 +567,7 @@ class BinaryFileUnpack:
         fig.colorbar(data, ax=ax, shrink=0.9, label="Time (s)")
 
         if savefig:
-            fig.savefig(title.lower().replace('.', '').replace(' ', '_').replace('(', '-').replace(')', '-')+'.png', bbox_inches="tight")
+            fig.savefig(title.lower().replace('.', '').replace(' ', '_').replace('\n', '_').replace('(', '-').replace(')', '-')+'.png', bbox_inches="tight")
 
     def getTimeRange(self, start:float, end:float) -> np.ndarray:
         '''
