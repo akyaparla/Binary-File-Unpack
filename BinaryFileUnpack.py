@@ -508,7 +508,20 @@ class BinaryFileUnpack:
             ordering (ndarray): Ordering of sensors to be shown. Default is sensors ordered in ascending order.
             cmap (str): String Representation of color maps from the matplotlib.cm library. Defualt is 'summer'.
         '''
+        import warnings
+        from urllib.error import URLError
         import matplotlib.pyplot as plt
+        import pandas as pd
+
+        if show_phase_boundaries:
+            try: # Load in coefficients for phase boundary
+                n = pd.read_csv("iapws-if97-region4.csv")["ni"].to_numpy()
+            except FileNotFoundError:
+                try:
+                    n = pd.read_csv("https://raw.githubusercontent.com/akyaparla/Binary-File-Unpack/main/iapws-if97-region4.csv")["ni"].to_numpy()
+                except URLError:
+                    warnings.warn("'iapws-if97-region4.csv' file not found, ignore phase boundaries")
+                    show_phase_boundaries = False
 
         ordering = np.array(ordering)
         if times is None: 
@@ -529,20 +542,8 @@ class BinaryFileUnpack:
             # Colormap by time
             data = ax[count].scatter(T[ind_sens], P[ind_sens], c=times, cmap=cmap, s=2)
 
-            # TODO: Use Steam Tables Instead of Approximation
-            if show_phase_boundaries:
-                import pandas as pd
-                # From Eq (30). in http://twt.mpei.ac.ru/mcs/worksheets/iapws/IAPWS-IF97-Region4.xmcd
-                try:
-                    n = pd.read_csv("https://raw.githubusercontent.com/akyaparla/Binary-File-Unpack/main/iapws-if97-region4.csv")["ni"].to_numpy()
-                except:
-                    try:
-                        n = pd.read_csv("iapws-if97-region4.csv")["ni"].to_numpy()
-                    except:
-                        import warnings
-                        warnings.warn("iapws-if97-region4.csv not found, skipping phase boundaries", ResourceWarning)
-                        continue
-                    
+            Pcurve = np.ones(50)
+            if show_phase_boundaries:                  
                 minT = np.min(T[ind_sens]) + 273.15
                 maxT = np.max(T[ind_sens]) + 273.15
                 Trange = np.linspace(minT, maxT)
@@ -552,17 +553,18 @@ class BinaryFileUnpack:
                 C = n[5]*theta**2 + n[6]*theta + n[7]
                 Pcurve = 10 * (((2*C) / (-B + np.sqrt(B**2 - 4*A*C))))**4
                 ax[count].plot(Trange - 273.15, Pcurve, 'r--', label="Phase Boundary")
+                ax[count].legend(loc="upper right")
             
             # 100 C and 1 bar lines
             if np.max(T[ind_sens]) > 100 and np.min(T[ind_sens]) < 100:
-                ax[count].plot([100, 100], [min(np.min(P[ind_sens]), 1), np.max(P[ind_sens])], 'k--', alpha=0.5)
-            if np.max(P[ind_sens]) > 1 and np.min(P[ind_sens]) < 1:
+                ax[count].plot([100, 100], [min(np.min(P[ind_sens]), np.min(Pcurve)), max(np.max(P[ind_sens]), np.max(Pcurve))], 'k--', alpha=0.5)
+            if max(np.max(P[ind_sens]), np.max(Pcurve)) > 1 and min(np.min(P[ind_sens]), np.min(Pcurve)) < 1:
                 ax[count].plot([min(np.min(T[ind_sens]), 100), np.max(T[ind_sens])], [1, 1], 'k--', alpha=0.5)
-            
+                    
             # Additional plot features
             ax[count].invert_yaxis()
             ax[count].set_title(f"Sensor {ind_sens + 1}")
-            ax[count].legend(loc="upper right")
+
         # Colorbar
         fig.colorbar(data, ax=ax, shrink=0.9, label="Time (s)")
 
