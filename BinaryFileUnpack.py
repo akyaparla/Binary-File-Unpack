@@ -13,12 +13,13 @@ class BinaryFileUnpack:
         getDtype (np.ndarray or Object): Method to read the bytes of a file as a given data type. Main purpose is to be used in __init__ method.
         endOfFile (bool): Checks whether the end of file has been reached. Main purpose is to be used in __init__ method.
     '''
-    def __init__(self, fileName:str):
+    def __init__(self, fileName:str, seconds:float=None):
         '''
         Method to initialize a BinaryFileUnpack object.
 
         Parameters:
-            fileName: The file path for the binary file to be analyzed
+            fileName (str): The file path for the binary file to be analyzed.
+            seconds (float): The number of seconds at which to cut the file. Default is None; file is not cut.
 
         Instance variables:
             fileName (str): File path of the input binary file.
@@ -101,6 +102,13 @@ class BinaryFileUnpack:
         self.data = np.empty((int(1e7), NumEnChan[0], devCount))
         NS_sum = 0
         while not status:
+            if seconds is not None: 
+                if c >= seconds*self.fs:
+                    new_fn = fileName.split('.')[0] + f'_{c//self.fs}secs' + fileName.split('.')[1]
+                    with open(new_fn, "wb") as new_file:
+                        new_file.write(self.fileContent[:self.offset])
+                    print(f"{round(c/self.fs, 3)} seconds of data have been written into {new_fn}!")
+                    break
             for i in range(devCount):
                 Tsec = self.getDtype('Q', 8)
                 TNsec = self.getDtype('I', 4)
@@ -116,8 +124,8 @@ class BinaryFileUnpack:
 
             c += Nt
             status = BinaryFileUnpack.endOfFile(self)
-            
-        self.data = self.data[:NS_sum//12]
+        
+        self.data = self.data[:c]
 
         ## Getting Temperature and Pressure Data
         def temp_convert(temp, SN) -> float:
@@ -211,6 +219,8 @@ class BinaryFileUnpack:
                 j = ind_arr[0]
                 self.P[i] = self.P[i] - sens_abs[j, 1]
                 self.Pstd[i] = sens_abs[j, 2]
+
+    @classmethod
 
     def spectra(self, data_spec: np.ndarray) -> np.ndarray:
         '''
@@ -531,8 +541,8 @@ class BinaryFileUnpack:
         P = self.P[:, start_ind:end_ind+1]
         T = self.T[:, start_ind:end_ind+1]
 
-        rows = ordering.shape[0]
-        fig, ax = plt.subplots(rows, 1, sharex=sharex, figsize=(10, 5/3*rows), constrained_layout=True)
+        num = ordering.shape[0]
+        fig, ax = plt.subplots(1, num, sharex=sharex, figsize=(10*num, 10), constrained_layout=True)
 
         fig.text(0.5, -0.015, r"Temperature ($^{\circ}C$)", ha='center')
         fig.text(-0.015, 0.5, "Pressure (bar)", va='center', rotation='vertical')
@@ -542,7 +552,8 @@ class BinaryFileUnpack:
             # Colormap by time
             data = ax[count].scatter(T[ind_sens], P[ind_sens], c=times, cmap=cmap, s=2)
 
-            Pcurve = np.ones(50)
+            P100 = 1.0141797792131013
+            Pcurve = np.zeros(50) + P100
             if show_phase_boundaries:                  
                 minT = np.min(T[ind_sens]) + 273.15
                 maxT = np.max(T[ind_sens]) + 273.15
@@ -558,8 +569,8 @@ class BinaryFileUnpack:
             # 100 C and 1 bar lines
             if np.max(T[ind_sens]) > 100 and np.min(T[ind_sens]) < 100:
                 ax[count].plot([100, 100], [min(np.min(P[ind_sens]), np.min(Pcurve)), max(np.max(P[ind_sens]), np.max(Pcurve))], 'k--', alpha=0.5)
-            if max(np.max(P[ind_sens]), np.max(Pcurve)) > 1 and min(np.min(P[ind_sens]), np.min(Pcurve)) < 1:
-                ax[count].plot([min(np.min(T[ind_sens]), 100), np.max(T[ind_sens])], [1, 1], 'k--', alpha=0.5)
+            if max(np.max(P[ind_sens]), np.max(Pcurve)) > P100 and min(np.min(P[ind_sens]), np.min(Pcurve)) < P100:
+                ax[count].plot([min(np.min(T[ind_sens]), 100), np.max(T[ind_sens])], [P100, P100], 'k--', alpha=0.5)
                     
             # Additional plot features
             ax[count].invert_yaxis()
@@ -571,13 +582,13 @@ class BinaryFileUnpack:
         if savefig:
             fig.savefig(title.lower().replace('.', '').replace(' ', '_').replace('\n', '_').replace('(', '-').replace(')', '-')+'.png', bbox_inches="tight")
 
-    def getTimeRange(self, start:float, end:float) -> np.ndarray:
+    def getTimeRange(self, start:float=0, end:float=None) -> np.ndarray:
         '''
         Returns a time series of the data. Intended for use as a time series input for other relavent methods.
 
         Parameters:
-            start (float): The starting time for the slice
-            end (float): The end time for the slice
+            start (float): The starting time for the slice. Default is 0
+            end (float): The end time for the slice. Default is end of time series
 
         Returns:
             (ndarray): The resulting time series slice for the provided start and end times.
@@ -588,6 +599,8 @@ class BinaryFileUnpack:
                 Start time must be less than end time.
         
         '''
+        if end is None:
+            end = self.time[-1]
         start_index = int(start * self.fs)
         end_index = int(end * self.fs)
         if start > end:
@@ -626,4 +639,4 @@ class BinaryFileUnpack:
         Returns:
             (bool) True if end of file is reached; otherwise False.
         '''
-        return self.offset == len(np.fromfile(self.fileName, dtype='byte'))
+        return self.offset == len(self.fileContent)
