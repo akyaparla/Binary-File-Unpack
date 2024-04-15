@@ -1,4 +1,5 @@
 import numpy as np
+import csv
 class BinaryFileUnpack:
     '''
     Class to neatly unpack binary files. Provides the header information as well as the data for the sensors.
@@ -13,13 +14,14 @@ class BinaryFileUnpack:
         getDtype (np.ndarray or Object): Method to read the bytes of a file as a given data type. Main purpose is to be used in __init__ method.
         endOfFile (bool): Checks whether the end of file has been reached. Main purpose is to be used in __init__ method.
     '''
-    def __init__(self, fileName:str, seconds:float=None):
+    def __init__(self, fileName:str, seconds:float=None, sens_from_header:bool=True):
         '''
         Method to initialize a BinaryFileUnpack object.
 
         Parameters:
             fileName (str): The file path for the binary file to be analyzed.
             seconds (float): The number of seconds at which to cut the file. Default is None; file is not cut.
+            sens_from_header (bool): Selects Sensor SN from header csv if selected, prestored if False. Default is True.
 
         Instance variables:
             fileName (str): File path of the input binary file.
@@ -104,7 +106,7 @@ class BinaryFileUnpack:
         while not status:
             if seconds is not None: 
                 if c >= seconds*self.fs:
-                    new_fn = fileName.split('.')[0] + f'_{c//self.fs}secs' + fileName.split('.')[1]
+                    new_fn = fileName.split('.')[0] + f'_{int(c//self.fs)}secs.' + fileName.split('.')[1]
                     with open(new_fn, "wb") as new_file:
                         new_file.write(self.fileContent[:self.offset])
                     print(f"{round(c/self.fs, 3)} seconds of data have been written into {new_fn}!")
@@ -158,6 +160,26 @@ class BinaryFileUnpack:
 
         # Numpy array with sensor SN with index corresponding to position
         sens_used = np.array([5122778, 5122769, 5940428, 5122770, 5122777, 5940430])
+        sens_used = sens_used[:self.num_sens]
+        if sens_from_header:
+            try:
+                headerName = fileName.split('.')[0] + "_headerInfo.csv"
+                with open(headerName, 'r') as file: # Find file, go to except statement otherwise
+                    reader = csv.reader(file)
+                    for i, line in enumerate(reader):
+                        if i == 14: # 14th line in header file is Pressure 1 channel
+                            for j in range(devCount):
+                                sens_used[int(2*j)] = int(line[j+1])
+                        elif i == 42: #42nd line in header file is Pressure 2 channel
+                            sens_used[int(2*j + 1)] = int(line[j+1])
+                
+            except:
+                # No header file, use default sens and send warning
+                import warnings
+                msg = "\n"
+                for j in range(self.num_sens):
+                    msg += f"\tPosition {j+1}: SN {sens_used[j]}\n"
+                warnings.warn("\nNo header file detecting, using default sensor settings."+msg)
 
         P = np.empty((self.num_sens, self.data.shape[0]))
         T = np.empty((self.num_sens, self.data.shape[0]))
@@ -212,15 +234,13 @@ class BinaryFileUnpack:
         ])
 
         # Apply corrections to sensors
-        for i in range(len(sens_used)):
-            # See if correction can be applied to the sensor
-            ind_arr = np.where(sens_corr[:, 0] == sens_used[i])[0]
-            if len(ind_arr) > 0:
-                j = ind_arr[0]
-                self.P[i] = self.P[i] - sens_abs[j, 1]
-                self.Pstd[i] = sens_abs[j, 2]
-
-    @classmethod
+        # for i in range(len(sens_used)):
+        #     # See if correction can be applied to the sensor
+        #     ind_arr = np.where(sens_corr[:, 0] == sens_used[i])[0]
+        #     if len(ind_arr) > 0:
+        #         j = ind_arr[0]
+        #         self.P[i] = self.P[i] - sens_abs[j, 1]
+        #         self.Pstd[i] = sens_abs[j, 2]
 
     def spectra(self, data_spec: np.ndarray) -> np.ndarray:
         '''
@@ -257,8 +277,8 @@ class BinaryFileUnpack:
         return Pxx
 
     def plot_static(self, x:np.ndarray, y:np.ndarray, x_label:str, y_label:str, plots_shape:tuple, color:str='blue', 
-                    y2:np.ndarray=None, y2_label:str=None, color2:str='red', x_axis_type:str='linear', ordering:np.ndarray=np.arange(0, 6),
-                    times:np.ndarray=None, sharex=True, plot_type='line', figfilename:str=None):
+                    y2:np.ndarray=None, y2_label:str=None, color2:str='red', x_axis_type:str='linear', ordering:np.ndarray=None,
+                    times:np.ndarray=None, sharex=True, sharey=False, plot_type='line', figfilename:str=None):
         '''
         Outputs a static plot of the sensor data against a time series. Utilizes the matplotlib module.
 
@@ -300,7 +320,7 @@ class BinaryFileUnpack:
         # Only look at y provided within time series
         ydata = y[:, start_ind:end_ind+1]
 
-        fig, ax = plt.subplots(plots_shape[0], plots_shape[1], sharex=sharex, figsize=(10, 5/3*self.num_sens), tight_layout=True)
+        fig, ax = plt.subplots(plots_shape[0], plots_shape[1], sharex=sharex, sharey=sharey, figsize=(10, 5/3*self.num_sens), tight_layout=True)
 
         fig.text(0.5, -0.015, x_label, ha='center')
         fig.text(-0.015, 0.5, y_label, va='center', rotation='vertical')
@@ -326,6 +346,7 @@ class BinaryFileUnpack:
         
         if ordering is None: 
             ordering = np.arange(ydata.shape[0])
+        
         assert len(ordering) == ydata.shape[0] and max(ordering) == ydata.shape[0]-1, f"Make sure ordering contains correct sensor numbers from 0 to {y.shape[0]-1}."
         for count, ind_sens in enumerate(ordering):
             # Determining where sensors are on plot
@@ -504,8 +525,8 @@ class BinaryFileUnpack:
             raise ValueError(f"{output_format} is not a valid option for output_format. Allowed options are 'file' and 'notebook'")
         show(grid)
 
-    def plot_eruption_PT(self, sharex:bool=False, times:np.ndarray=None, title:str=None, savefig:str=False, 
-                         show_phase_boundaries:bool=False, ordering:np.ndarray=np.arange(0, 6, dtype=int), cmap:str='summer'):
+    def plot_eruption_PT(self, sharex:bool=True, sharey:bool=True, xlim:tuple=(98, 104), ylim:tuple=(0.95, 1.225), times:np.ndarray=None, title:str=None, 
+                         show_phase_boundaries:bool=True, ordering:np.ndarray=np.arange(0, 6, dtype=int), cmap:str='summer', savefig:str=False):
         '''
         Outputs a Pressure-Temperature plot of an eruption. Utilizes the matplotlib module.
 
@@ -542,22 +563,35 @@ class BinaryFileUnpack:
         T = self.T[:, start_ind:end_ind+1]
 
         num = ordering.shape[0]
-        fig, ax = plt.subplots(1, num, sharex=sharex, figsize=(10*num, 10), constrained_layout=True)
+        fig, ax = plt.subplots(1, num, sharex=sharex, sharey=sharey, figsize=(10/3*num, 10), constrained_layout=True)
 
-        fig.text(0.5, -0.015, r"Temperature ($^{\circ}C$)", ha='center')
+        fig.text(0.5, 0.12, r"Temperature ($^{\circ}C$)", ha='center')
         fig.text(-0.015, 0.5, "Pressure (bar)", va='center', rotation='vertical')
         fig.text(0.5, 1.015, title, ha='center')
         
         for count, ind_sens in enumerate(ordering):
+            if not sharex:
+                minT = np.min(T[ind_sens])
+                maxT = np.max(T[ind_sens])
+                durationX = maxT - minT
+                xlim = (minT - 0.01*durationX, maxT + 0.01*durationX)
+            else:
+                minT, maxT = xlim
+
+            if not sharey:
+                minP = np.min(P[ind_sens])
+                maxP = np.max(P[ind_sens])
+                durationY = maxP - minP
+                ylim = (minP - 0.01*durationY, maxP + 0.01*durationY)
+            else:
+                minP, maxP = ylim
             # Colormap by time
             data = ax[count].scatter(T[ind_sens], P[ind_sens], c=times, cmap=cmap, s=2)
 
             P100 = 1.0141797792131013
             Pcurve = np.zeros(50) + P100
-            if show_phase_boundaries:                  
-                minT = np.min(T[ind_sens]) + 273.15
-                maxT = np.max(T[ind_sens]) + 273.15
-                Trange = np.linspace(minT, maxT)
+            if show_phase_boundaries:          
+                Trange = np.linspace(minT, maxT) + 273.15
                 theta = Trange + n[8] / (Trange - n[9])
                 A =      theta**2 + n[0]*theta + n[1]
                 B = n[2]*theta**2 + n[3]*theta + n[4]
@@ -567,17 +601,19 @@ class BinaryFileUnpack:
                 ax[count].legend(loc="upper right")
             
             # 100 C and 1 bar lines
-            if np.max(T[ind_sens]) > 100 and np.min(T[ind_sens]) < 100:
-                ax[count].plot([100, 100], [min(np.min(P[ind_sens]), np.min(Pcurve)), max(np.max(P[ind_sens]), np.max(Pcurve))], 'k--', alpha=0.5)
-            if max(np.max(P[ind_sens]), np.max(Pcurve)) > P100 and min(np.min(P[ind_sens]), np.min(Pcurve)) < P100:
-                ax[count].plot([min(np.min(T[ind_sens]), 100), np.max(T[ind_sens])], [P100, P100], 'k--', alpha=0.5)
+            if maxT > 100 and minT < 100:
+                ax[count].plot([100, 100], [min(minP, np.min(Pcurve)), max(maxP, np.max(Pcurve))], 'k--', alpha=0.5)
+            if max(maxP, np.max(Pcurve)) > P100 and min(minP, np.min(Pcurve)) < P100:
+                ax[count].plot([min(minT, 100), maxT], [P100, P100], 'k--', alpha=0.5)
                     
             # Additional plot features
+            ax[count].set_xlim(xlim)
+            ax[count].set_ylim(ylim)
             ax[count].invert_yaxis()
             ax[count].set_title(f"Sensor {ind_sens + 1}")
 
         # Colorbar
-        fig.colorbar(data, ax=ax, shrink=0.9, label="Time (s)")
+        fig.colorbar(data, ax=ax, shrink=0.9, label="Time (s)", location='bottom', pad=0.05)
 
         if savefig:
             fig.savefig(title.lower().replace('.', '').replace(' ', '_').replace('\n', '_').replace('(', '-').replace(')', '-')+'.png', bbox_inches="tight")
