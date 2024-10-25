@@ -139,11 +139,11 @@ class BinaryFileUnpack:
                 V25 = 1.470
                 slope = 0.01742
             elif SN == 5122769:
-                V25 = 1.465
-                slope = 0.01738
+                V25 = 1.484
+                slope = 0.01698
             elif SN == 5122776:
                 V25 = 1.478
-                slope = 0.01746
+                slope = 0.01698
             elif SN == 5122777:
                 V25 = 1.480
                 slope = 0.1739
@@ -156,6 +156,22 @@ class BinaryFileUnpack:
             elif SN == 5940430:
                 V25 = 1.484
                 slope = 0.01734
+            elif SN == 5940434:
+                V25 = 1.476
+                slope = 0.01690
+            elif SN == 5961388:
+                V25 = 1.473
+                slope = 0.01688
+            elif SN == 5940436:
+                V25 = 1.475
+                slope = 0.01701
+            elif SN == 5940432:
+                V25 = 1.474
+                slope = 0.01693
+            elif SN == 5940431:
+                V25 = 1.482
+                slope = 0.01688
+            
             return (temp - V25) / slope + 25
 
         # Numpy array with sensor SN with index corresponding to position
@@ -166,12 +182,23 @@ class BinaryFileUnpack:
                 headerName = fileName.split('.')[0] + "_headerInfo.csv"
                 with open(headerName, 'r') as file: # Find file, go to except statement otherwise
                     reader = csv.reader(file)
+                    newOrder = np.zeros(devCount, dtype=int)
                     for i, line in enumerate(reader):
+                        if i == 13: # Read location of sensors using manual naming
+                            for j in range(devCount):
+                                newOrder[j] = int(line[j+1][-1]) - 1
+
                         if i == 14: # 14th line in header file is Pressure 1 channel
                             for j in range(devCount):
-                                sens_used[int(2*j)] = int(line[j+1])
-                        elif i == 42: #42nd line in header file is Pressure 2 channel
-                            sens_used[int(2*j + 1)] = int(line[j+1])
+                                sens_used[newOrder[j]] = int(line[j+1])
+                                
+                        elif i == 41: # Read location of sensors using manual naming
+                            for j in range(devCount):
+                                newOrder[j] = int(line[j+1][-1]) - 1
+                            
+                        elif i == 42: # 42nd line in header file is Pressure 3 channel
+                            for j in range(devCount):
+                                sens_used[newOrder[j]] = int(line[j+1])
                 
             except:
                 # No header file, use default sens and send warning
@@ -180,14 +207,17 @@ class BinaryFileUnpack:
                 for j in range(self.num_sens):
                     msg += f"\tPosition {j+1}: SN {sens_used[j]}\n"
                 warnings.warn("\nNo header file detecting, using default sensor settings."+msg)
+        self.sens_used = sens_used
+
+        ### Change as of 06/19/2024 : Take calibrations at beginning of day and apply those.
 
         P = np.empty((self.num_sens, self.data.shape[0]))
         T = np.empty((self.num_sens, self.data.shape[0]))
         for i in range(devCount):
             T[2*i]   = temp_convert(self.data[:, 1, i], sens_used[order[2*i]])
             T[2*i+1] = temp_convert(self.data[:, 3, i], sens_used[order[2*i+1]])
-            P[2*i]   = self.data[:, 0, i]
-            P[2*i+1] = self.data[:, 2, i]
+            P[2*i]   = self.data[: , 0, i]
+            P[2*i+1] = self.data[: , 2, i]
 
         self.P = P[order]
         self.T = T[order]
@@ -196,6 +226,8 @@ class BinaryFileUnpack:
         self.time = np.linspace(0, (self.P.shape[1])/self.fs, self.P.shape[1])
 
         ## Apply pressure and temperature corrections by serial number
+        # 06/17/2024: No we don't, now we do daily calibration
+            # Maybe turn them on when rerunning old tests??? Idk rn they're turned off
 
         # Numpy array with all the sensor corrections, first column is serial number, 
         # second column is P correction, third column is P correction std. dev.
@@ -210,13 +242,6 @@ class BinaryFileUnpack:
         ])
 
         # self.Pstd contains the standard deviations of calibrations
-        self.Pstd = np.empty(sens_used.shape)
-        # # Apply temperature correction
-        for i in range(len(sens_used)):
-            # See if correction can be applied to the sensor
-            ind_arr = np.where(sens_corr[:, 0] == sens_used[i])[0]
-            if len(ind_arr) > 0:
-                j = ind_arr[0]
                 # self.P[i] += sens_corr[j, 1]
                 # self.T[i] += temp_convert(sens_corr[j, 3] + 1.478) - 25
 
@@ -360,10 +385,10 @@ class BinaryFileUnpack:
         
             # Plotting graphs
             if plot_type == 'line':
-                ax[i][j].plot(x_select, ydata[ind_sens], color=color)
+                ax[i][j].plot(x_select, ydata[ind_sens], color=color, linewidth=0.5)
                 if y2 is not None:
                     # Plot second data source
-                    ax2[i][j].plot(x_select, y2data[ind_sens], color=color2)
+                    ax2[i][j].plot(x_select, y2data[ind_sens], color=color2, linewidth=0.5)
 
             elif plot_type == 'scatter':
                 ax[i][j].scatter(x_select, ydata[ind_sens], color=color, s=2)
