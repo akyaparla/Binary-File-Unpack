@@ -38,7 +38,10 @@ class BinaryFileUnpack:
                 Second axis: The temperature data for the respective sensor for a time series (given by self.time).
             Pstd (ndarray): A 1-dimensional array containing the standard deviations of the Pressure calibration for each sensor.
             time (ndarray): The time series for the data given in self.P and self.T.
-            offset: A variable to track the number of bytes transversed in the binary file. Primarily meant for internal use.
+            offset (int): A variable to track the number of bytes transversed in the binary file. Primarily meant for internal use.
+        
+        Raises:
+            Warning: Header file not Detected, will use default sensor positions.
         '''
 
         self.fileName = fileName.replace('\\', '/')
@@ -309,31 +312,31 @@ class BinaryFileUnpack:
 
         Parameters:
             x (ndarray): A (1-D) array of the time series or (2-D) array of the frequency or measurement data. If 2-D, axis convention follows that of the param y.
-            y (ndarray): A 2-dimensional array with the sensor data or power spectrum. 
+            y (ndarray): A 2-D array with the sensor data or power spectrum. 
                 First axis: The sensor index.
                 Second axis: Contains the data for that sensor.
             x_label (str): The name of the data that defines the x-axis.
             y_label (str): The type of sensor data along with its units.
             plots_shape (tuple): The shape of the plots in the output in terms of number of rows and columns. Input should be (rows, cols).
             color (Any): Identifies the line_color feature of each line glyph for the plots. Allowed inputs are those allowed by line_color. Default is 'blue'.
-            y2 (ndarray): An optional second array that is of the same dimension as :param: y. Will be plotted alongside y with an additional axis.
+            y2 (ndarray): An optional second array that is of the same dimension as @param y. Will be plotted alongside y with an additional axis.
             y2_label (str): The type of secondary sensor data along with its units.
             color2 (str): The color of the optional second data array. Default is 'red'.
-            x_axis_type ('linear', 'log'): The scale of the x-axis, either can be a linear axis (='linear;) or logarithmic axis (='log'). Default is 'linear'.
+            x_axis_type ('linear', 'log'): The scale of the x-axis, either can be a linear axis (='linear') or logarithmic axis (='log'). Default is 'linear'.
             ordering (list): A custom ordering of the sensor plot data. Indicate the sensor index (starting from 0), not the number.
                             Will throw a AssertError if len(ordering) != y.shape[0] or max(ordering) != y.shape[0] - 1.
             times (ndarray): A time series for the data.
             sharex (bool): If true, the plots will share the same x-scale. Otherwise, they will have independent scales.
+            sharey (bool): If true, the plots will share the same y-scale. Otherwise, they will have independent scales.
             plot_type ('line', 'scatter'): Defines the type of plot displayed. Default is 'line'.
+            figfilename (str): Will save the image, and assign it with file name "figfilename".
         
         Raises:
-            ValueError:
-                The plot dimension does not match the number of plots (same as the number of sensors).
+            AssertError:
+                If y2 is provided, y and y2 are of different dimension.
+                If ordering is provided, size of ordering is different from total number of sensors.
         '''
         import matplotlib.pyplot as plt
-
-        # if plots_shape[0]*plots_shape[1] != y.shape[0]:
-        #     raise ValueError(f"Plot dimension does not match number of plots. Plot Dimension: {plots_shape}, Number of plots: {y.shape[0]}")
 
         if times is None:
             times = self.time
@@ -407,6 +410,7 @@ class BinaryFileUnpack:
     def plot_interactive(self, x:np.ndarray, y:np.ndarray, x_label:str, y_label:str, 
                          plots_shape:tuple, color=None, x_axis_type:str='linear', output_format:str='file'):
         '''
+        WARNING: Incredibly depreciated!
         Outputs a plot of the sensor data against a time series. Implements a HoverTool and a CrossHairTool for the user to analyze the data.
         Parameters:
             x (ndarray): A (1-D) array of the time series or (2-D) array of the frequency data. If 2-D, axis convention follows that of the param y.
@@ -431,6 +435,9 @@ class BinaryFileUnpack:
         from bokeh.models.tools import HoverTool, CrosshairTool, BoxZoomTool, WheelZoomTool, SaveTool, ResetTool
         from bokeh.models.widgets import RangeSlider
         
+        import warnings
+        warnings.warn("Very Depreciated, do not use")
+
         if plots_shape[0]*plots_shape[1] != y.shape[0]:
             raise ValueError(f"Plot dimension does not match number of plots. Plot Dimension: {plots_shape}, Number of plots: {self.num_sens}")
 
@@ -551,18 +558,21 @@ class BinaryFileUnpack:
         show(grid)
 
     def plot_eruption_PT(self, sharex:bool=True, sharey:bool=True, xlim:tuple=(98, 104), ylim:tuple=(0.95, 1.225), times:np.ndarray=None, title:str=None, 
-                         show_phase_boundaries:bool=True, ordering:np.ndarray=np.arange(0, 6, dtype=int), cmap:str='summer', savefig:str=False):
+                         show_phase_boundaries:bool=True, ordering:np.ndarray=np.arange(0, 6, dtype=int), cmap:str='summer', savefig:bool=False):
         '''
         Outputs a Pressure-Temperature plot of an eruption. Utilizes the matplotlib module.
 
         Parameters:
-            sharex (bool): Option to use same temperature axis for all sensor plots. Default set to False.
-            times (ndarray): Optional time series splice for the data. Use @method getTimeRange helper method to get splice. Default set to self.time.
+            sharex (bool): Option to use same temperature axis for all sensor plots. Default set to True.
+            sharey (bool): Option to use same pressure axis for all sensor plots. Default set to True.
+            xlim (tuple): Select temperature range in degrees Celsius. Default is (98, 104).
+            ylim (tuple): Select pressure range in bar. Default is (0.95, 1.225).
+            times (ndarray): Optional time series splice for the data. Use @method getTimeRange helper to get splice. Default set to self.time.
             title (str): Title for figure, and file name to be used to save the figure if savefig is True. Default is None.
-            savefig (bool): Option to save PT plot. If True, file name will be the modified title name.
             show_phase_boundaries (bool): Option to show the phase boundaries produced by the Clapeyron equation. Default is False.
             ordering (ndarray): Ordering of sensors to be shown. Default is sensors ordered in ascending order.
             cmap (str): String Representation of color maps from the matplotlib.cm library. Defualt is 'summer'.
+            savefig (bool): Option to save PT plot. If True, file name will be the modified title name.
         '''
         import warnings
         from urllib.error import URLError
