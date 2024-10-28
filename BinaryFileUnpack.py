@@ -273,7 +273,6 @@ class BinaryFileUnpack:
 
     def spectra(self, data_spec: np.ndarray) -> np.ndarray:
         '''
-        WARNING: Depreciated
         Returns the frequencies (in Hertz) and the power (in deciBels) present in the spectrum of the data. Utilizes the scipy module to return the spectrum.
 
         Parameters:
@@ -287,10 +286,7 @@ class BinaryFileUnpack:
                 Second axis: Contains the sensor indices.
 
                 Third axis: The data of either frequency or power for the respective sensor.
-        Raises:
-            FutureWarning: Depreciated
         '''
-        warnings.warn("Soon to be depreciated", FutureWarning)
         # Getting Frequencies for Spectral Analysis
         import scipy.signal as signal
         # Length of first axis indicates number of sensors
@@ -396,11 +392,17 @@ class BinaryFileUnpack:
             AssertError:
                 If y2 is provided, y and y2 are of different dimension.
                 If ordering is provided, size of ordering is different from total number of sensors.
+            Warning:
+                'log' option for x_axis_type is buggy, will be fixed soon.
         '''
         import matplotlib.pyplot as plt
 
         if times is None:
             times = self.time
+
+        # TODO: Fix this
+        if x_axis_type == "log":
+            warnings.warn("'log' option for x_axis_type is buggy, will be fixed soon")
         # Find where provided time series is within overall series
         start_ind = np.where(self.time == times[0])[0][0]
         end_ind = np.where(self.time == times[-1])[0][0]
