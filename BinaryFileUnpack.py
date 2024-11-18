@@ -103,7 +103,7 @@ class BinaryFileUnpack:
                 for line in fr:
                     splice_line = line.rstrip()
             if splice_line.split(',')[0] == "Start Splice":
-                self.start_splice[1] = float(splice_line.split(',')[1])
+                self.start_splice = float(splice_line.split(',')[1])
         except:
             pass
 
@@ -125,75 +125,62 @@ class BinaryFileUnpack:
         Trel = 0
         self.data = np.empty((int(1e7), NumEnChan[0], devCount))
         NS_sum = 0
+        # Variables to keep track of spliced file.
+        self.c_start = -1
+        start_byteloc:int = meta_bytes
         while not status:
             # Want to make a new .bin file if cut_range is specified
             if cut_range is not None: 
-                # Keep track of when to record data
-                c_start = -1
-                start_byteloc = -1
                 # Make new .bin file, new header .csv file.
                 if c >= cut_range[1]*self.fs:
                     if new_file:
                         # .bin file
-                        new_fn = fileName.split('.')[0] + f'_{c_start//self.fs}s-{c//self.fs}s.bin'
+                        new_fn = fileName.split('.')[0] + f'_{int(self.c_start//self.fs)}s-{int(c//self.fs)}s.bin'
                         with open(new_fn, "wb") as new_file:
                             new_file.write(
-                                self.fileContent[np.hstack(
-                                    np.arange(int(meta_bytes)),
-                                    np.arange(start_byteloc, self.offset)
-                                )]
+                                self.fileContent[: meta_bytes] + self.fileContent[start_byteloc : self.offset]
                             )
                         # .csv file
                         try:
                             with open(fileName.split('.')[0] + "_headerInfo.csv", 'r') as fr:
                                 headers = fr.readlines()
-                            new_head_file = fileName.split('.')[0] + f'_{c_start//self.fs}s-{c//self.fs}s_headerInfo.csv'
+                            new_head_file = fileName.split('.')[0] + f'_{int(self.c_start//self.fs)}s-{int(c//self.fs)}s_headerInfo.csv'
                             with open(new_head_file, 'w') as fw:
                                 fw.writelines(headers)
-                                fw.write(f"Start Splice,{round(c_start/self.fs, 9)}")
+                                fw.write(f"Start Splice,{round(self.c_start/self.fs, 9)}")
                         except FileNotFoundError:
                             warnings.warn("Header file of original not detected, new header not created.")
 
-                        print(f"Data from {round(c_start/self.fs, 3)}s to {round(c/self.fs, 3)}s ({round((c-c_start)/self.fs, 3)} seconds) have been written into {new_fn}!")
+                        print(f"Data from {round(self.c_start/self.fs, 3)}s to {round(c/self.fs, 3)}s ({round((c-self.c_start)/self.fs, 3)} seconds) have been written into {new_fn}!",
+                              f"\nHeader file in {new_head_file}!")
                     break
-
-                for i in range(devCount):
-                    Tsec = self.getDtype('Q', 8)
-                    TNsec = self.getDtype('I', 4)
-                    NS = self.getDtype('I', 4)
-                    NS_sum+=NS
-                    Nt = NS // NumEnChan[i]
-                    d = self.getDtype('f', 4, NumEnChan[i]*Nt).reshape((Nt, NumEnChan[i]))
+            else: 
+                self.c_start = 0
+            for i in range(devCount):
+                tmp_start_byteloc = self.offset
+                Tsec = self.getDtype('Q', 8)
+                TNsec = self.getDtype('I', 4)
+                NS = self.getDtype('I', 4)
+                NS_sum+=NS
+                Nt = NS // NumEnChan[i]
+                d = self.getDtype('f', 4, NumEnChan[i]*Nt).reshape((Nt, NumEnChan[i]))
+                if cut_range is not None:
                     if c >= cut_range[0]*self.fs:
-                        if c_start < 0:
-                            c_start = c
-                            start_byteloc = self.offset - (8+4+4+4*NumEnChan[i]*Nt)
-                        if c >= self.data.shape[0]:
-                            tmp = np.empty((self.data.shape[0]*10, NumEnChan[0], devCount))
-                            tmp[:c, :, :] = self.data
-                            self.data = tmp
-                        self.data[c:c+Nt, :, i] = d
-                c += Nt
-                status = BinaryFileUnpack.endOfFile(self)
+                        if self.c_start < 0:
+                            self.c_start = c
+                            start_byteloc = tmp_start_byteloc
 
-            else:
-                for i in range(devCount):
-                    Tsec = self.getDtype('Q', 8)
-                    TNsec = self.getDtype('I', 4)
-                    NS = self.getDtype('I', 4)
-                    NS_sum+=NS
-                    Nt = NS // NumEnChan[i]
-                    d = self.getDtype('f', 4, NumEnChan[i]*Nt).reshape((Nt, NumEnChan[i]))
+                if c >= self.c_start:
                     if c >= self.data.shape[0]:
                         tmp = np.empty((self.data.shape[0]*10, NumEnChan[0], devCount))
-                        tmp[:c, :, :] = self.data
+                        tmp[:c-self.c_start, :, :] = self.data
                         self.data = tmp
                     self.data[c:c+Nt, :, i] = d
 
             c += Nt
             status = BinaryFileUnpack.endOfFile(self)
         
-        self.data = self.data[:c]
+        self.data = self.data[:c-self.c_start]
 
         ## Getting Temperature and Pressure Data
         def temp_convert(temp, SN) -> float:
@@ -288,7 +275,7 @@ class BinaryFileUnpack:
         self.T = T[order]
 
         # Creating time series
-        self.time = np.linspace(0, (self.P.shape[1])/self.fs, self.P.shape[1]) + self.start_splice
+        self.time = np.linspace(0, (self.P.shape[1])/self.fs, self.P.shape[1]) + self.start_splice + self.c_start/self.fs
 
         ## Apply pressure and temperature corrections by serial number
         # 06/17/2024: No we don't, now we do daily calibration
@@ -646,13 +633,13 @@ class BinaryFileUnpack:
         '''
         if end is None:
             end = self.time[-1]
-        start_index = int((start-self.start_splice) * self.fs)
-        end_index = int((end-self.start_splice) * self.fs)
+        start_index = int((start-self.start_splice) * self.fs - self.c_start)
+        end_index = int((end-self.start_splice) * self.fs - self.c_start)
         if start > end:
             raise ValueError(f"Start time must be less than end time.")
 
         if start_index < 0 or end_index-1 > len(self.time):
-            raise ValueError(f"Provided times out of bounds, arguments must be between 0 and {round(len(self.time) / self.fs, 2)}.") 
+            raise ValueError(f"Provided times out of bounds, arguments must be between {round(self.time[0], 2)} and {round(self.time[-1], 2)}.") 
                 
         return self.time[start_index:end_index]
           
