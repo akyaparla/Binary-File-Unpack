@@ -173,9 +173,9 @@ class BinaryFileUnpack:
                 if c >= self.c_start:
                     if c >= self.data.shape[0]:
                         tmp = np.empty((self.data.shape[0]*10, NumEnChan[0], devCount))
-                        tmp[:c-self.c_start, :, :] = self.data
+                        tmp[: c-self.c_start, :, :] = self.data
                         self.data = tmp
-                    self.data[c:c+Nt, :, i] = d
+                    self.data[c-self.c_start : c-self.c_start+Nt, :, i] = d
 
             c += Nt
             status = BinaryFileUnpack.endOfFile(self)
